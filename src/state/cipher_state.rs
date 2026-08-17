@@ -5,12 +5,12 @@ use anyhow::{Result, bail};
 
 use crate::crypto::cipher::{Cipher, InternalCipherState};
 
-const MAX_N_VALUE: u64 = (2 ^ 64) - 1;
+const MAX_N_VALUE: u64 = u64::MAX;
 
 #[derive(Debug)]
 pub struct CipherState<C: Cipher> {
-    pub k: Option<C::State>,
-    pub n: u64,
+    k: Option<C::State>,
+    n: u64,
 }
 
 impl<C: Cipher> CipherState<C> {

@@ -456,7 +456,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                     }
                 }
                 Token::S => {
-                    let len = if self.s_state.c_state.has_key() {
+                    let len = if self.s_state.has_key() {
                         D::DHLEN + 16
                     } else {
                         D::DHLEN

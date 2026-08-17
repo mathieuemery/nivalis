@@ -10,10 +10,10 @@ use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
 use crate::state::cipher_state::CipherState;
 
 pub struct SymmetricState<C: Cipher, H: Hash> {
-    pub c_state: CipherState<C>,
+    c_state: CipherState<C>,
     ck: H::Output,
     h: H::Output,
-    pub splitted: bool,
+    splitted: bool,
 }
 
 impl<C: Cipher, H: Hash> SymmetricState<C, H> {
@@ -131,5 +131,9 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
             CipherState::initialize_key(Some(&k1)),
             CipherState::initialize_key(Some(&k2)),
         )
+    }
+
+    pub fn has_key(&self) -> bool {
+        self.c_state.has_key()
     }
 }
