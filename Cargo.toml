@@ -1,0 +1,32 @@
+[package]
+name = "nivalis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.11.0"
+anyhow = "1.0.103"
+blake2 = { git = "https://github.com/RustCrypto/hashes", rev = "b1f64e48b5bd800c2584f96f99dd9f10d923d178", package = "blake2" }
+chacha20poly1305 = "0.11.0"
+cx448 = "0.1.1"
+digest = "=0.10.7"
+getrandom = "0.4.3"
+hex = "0.4.3"
+hmac = "0.13"
+ring = "0.17.14"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+typenum = "1.20.1"
+x25519-dalek = { version = "3.0.0", features = ["getrandom", "static_secrets"] }
+zeroize = "1.9.0"
+
+[[example]]
+name = "xx"
+path = "examples/xx.rs"
+
+[[example]]
+name = "ikpsk2"
+path = "examples/ikpsk2.rs"
