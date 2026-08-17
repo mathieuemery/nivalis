@@ -20,6 +20,7 @@ pub struct HandshakeParamsBuilder<
     const RS: bool,
     const LE: bool,
     const RE: bool,
+    const PSK: bool,
 > where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -37,7 +38,7 @@ pub struct HandshakeParamsBuilder<
 }
 
 pub type NewBuilder<P, R, D, C, H> =
-    HandshakeParamsBuilder<P, R, D, C, H, false, false, false, false>;
+    HandshakeParamsBuilder<P, R, D, C, H, false, false, false, false, false>;
 
 impl<P, R, D, C, H> NewBuilder<P, R, D, C, H>
 where
@@ -124,8 +125,8 @@ where
     }
 }
 
-impl<P, R, D, C, H, const RS: bool, const LE: bool, const RE: bool>
-    HandshakeParamsBuilder<P, R, D, C, H, false, RS, LE, RE>
+impl<P, R, D, C, H, const RS: bool, const LE: bool, const RE: bool, const PSK: bool>
+    HandshakeParamsBuilder<P, R, D, C, H, false, RS, LE, RE, PSK>
 where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -136,7 +137,7 @@ where
     pub fn local_static_key(
         self,
         sk: D::PrivKey,
-    ) -> HandshakeParamsBuilder<P, R, D, C, H, true, RS, LE, RE> {
+    ) -> HandshakeParamsBuilder<P, R, D, C, H, true, RS, LE, RE, PSK> {
         let kp = D::Keypair::derive_keypair(&sk);
         HandshakeParamsBuilder {
             local_static: Some(kp),
@@ -150,8 +151,8 @@ where
     }
 }
 
-impl<P, R, D, C, H, const LS: bool, const LE: bool, const RE: bool>
-    HandshakeParamsBuilder<P, R, D, C, H, LS, false, LE, RE>
+impl<P, R, D, C, H, const LS: bool, const LE: bool, const RE: bool, const PSK: bool>
+    HandshakeParamsBuilder<P, R, D, C, H, LS, false, LE, RE, PSK>
 where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -162,7 +163,7 @@ where
     pub fn remote_static_key(
         self,
         pk: D::PubKey,
-    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, true, LE, RE> {
+    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, true, LE, RE, PSK> {
         HandshakeParamsBuilder {
             local_static: self.local_static,
             remote_static: Some(pk),
@@ -175,8 +176,8 @@ where
     }
 }
 
-impl<P, R, D, C, H, const LS: bool, const RS: bool, const RE: bool>
-    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, false, RE>
+impl<P, R, D, C, H, const LS: bool, const RS: bool, const RE: bool, const PSK: bool>
+    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, false, RE, PSK>
 where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -187,7 +188,7 @@ where
     pub fn local_ephemeral_key(
         self,
         sk: D::PrivKey,
-    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, true, RE> {
+    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, true, RE, PSK> {
         let kp = D::Keypair::derive_keypair(&sk);
         HandshakeParamsBuilder {
             local_static: self.local_static,
@@ -201,8 +202,8 @@ where
     }
 }
 
-impl<P, R, D, C, H, const LS: bool, const RS: bool, const LE: bool>
-    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, false>
+impl<P, R, D, C, H, const LS: bool, const RS: bool, const LE: bool, const PSK: bool>
+    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, false, PSK>
 where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -213,7 +214,7 @@ where
     pub fn remote_ephemeral_key(
         self,
         pk: D::PubKey,
-    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, true> {
+    ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, true, PSK> {
         HandshakeParamsBuilder {
             local_static: self.local_static,
             remote_static: self.remote_static,
@@ -226,8 +227,42 @@ where
     }
 }
 
-impl<P, R, D, C, H, const LS: bool, const RS: bool, const LE: bool, const RE: bool>
-    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE>
+impl<
+    P, R, D, C, H,
+    const LS: bool,
+    const RS: bool,
+    const LE: bool,
+    const RE: bool,
+>
+    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE, false>
+where
+    P: PatternRequirements<R>,
+    R: RoleMarker,
+    D: DH,
+    C: Cipher,
+    H: Hash,
+{
+    pub fn psk(
+        self,
+        psk: [u8; 32],
+    ) -> HandshakeParamsBuilder<
+        P, R, D, C, H,
+        LS, RS, LE, RE, true
+    > {
+        HandshakeParamsBuilder {
+            local_static: self.local_static,
+            remote_static: self.remote_static,
+            local_ephemeral: self.local_ephemeral,
+            remote_ephemeral: self.remote_ephemeral,
+            psk: Some(psk),
+            prologue: self.prologue,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<P, R, D, C, H, const LS: bool, const RS: bool, const LE: bool, const RE: bool, const PSK: bool>
+    HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE, PSK>
 where
     P: PatternRequirements<R>,
     R: RoleMarker,
@@ -237,11 +272,6 @@ where
 {
     pub fn prologue(mut self, prologue: Vec<u8>) -> Self {
         self.prologue = prologue;
-        self
-    }
-
-    pub fn psk(mut self, psk: [u8; 32]) -> Self {
-        self.psk = Some(psk);
         self
     }
 
@@ -263,15 +293,10 @@ where
                 RE || !P::REMOTE_EPHEMERAL_REQUIRED,
                 "missing `.remote_ephemeral_key(...)`: the peer's ephemeral key is a pre-message for this pattern/role"
             );
-        }
-
-        // PSK count is data-dependent, so it's a runtime check, not a
-        // compile-time assert like the other four.
-        if P::PSK_REQUIRED && self.psk.is_none() {
-            bail!(
-                "missing `.psk(index, key)`: this pattern requires at least one pre-shared key"
-                    .to_string(),
-            );
+            assert!(
+                PSK || !P::PSK_REQUIRED,
+                "missing `.psk(...)`: the pattern requires a psk to be valid"
+            )
         }
 
         let keys = HandshakeKeys {
