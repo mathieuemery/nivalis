@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 aes-gcm = "0.11.0"
 anyhow = "1.0.103"
-blake2 = { git = "https://github.com/RustCrypto/hashes", rev = "b1f64e48b5bd800c2584f96f99dd9f10d923d178", package = "blake2" }
+blake2 = "0.11.0-rc.6"
 chacha20poly1305 = "0.11.0"
 cx448 = "0.1.1"
 digest = "=0.10.7"
