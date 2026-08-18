@@ -80,4 +80,4 @@ See `examples/` for a full handshake-to-transport walkthrough, including sending
 
 ## Contributing
 
-This is very much a young project, and there's a lot of room to help: additional DH/cipher/hash backends, more handshake patterns, fuzzing, documentation, or just reading the code with a skeptical eye. Issues and PRs are welcome — if you're considering a larger change, opening an issue first to discuss the approach is appreciated.
+This is very much a young project, and there's a lot of room to help. Issues and PRs are welcome, if you're considering a larger change, opening an issue first to discuss the approach is appreciated.
