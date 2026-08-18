@@ -331,6 +331,7 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
     let mut resp_recv: Option<CipherState<C>> = None;
 
     // Handshake phase
+    #[allow(clippy::needless_range_loop)]
     for i in 0..handshake_msg_count {
         let message = &messages[i];
         let sender_is_init = i % 2 == 0;
