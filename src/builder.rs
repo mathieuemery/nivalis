@@ -60,6 +60,7 @@ where
         }
     }
 
+    /// To be used for integration tests
     pub fn from_parts(
         local_static: Option<D::PrivKey>,
         remote_static: Option<D::PubKey>,
