@@ -4,11 +4,10 @@
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, anyhow, bail};
-use ring::aead::chacha20_poly1305_openssh::TAG_LEN;
 use tracing::{debug, trace};
 
 use crate::{
-    constants::MAX_MESSAGE_LEN,
+    constants::{MAX_MESSAGE_LEN, TAG_LEN},
     crypto::{
         cipher::Cipher,
         dh::{DH, DHKeypair},
