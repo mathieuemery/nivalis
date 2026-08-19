@@ -2,10 +2,9 @@
 //! https://noiseprotocol.org/noise.html#the-symmetricstate-object
 
 use anyhow::{Result, anyhow, bail};
-use ring::aead::chacha20_poly1305_openssh::TAG_LEN;
 use tracing::trace;
 
-use crate::constants::{ENCRYPTION_KEY_LEN, MAX_MESSAGE_LEN};
+use crate::constants::{ENCRYPTION_KEY_LEN, MAX_MESSAGE_LEN, TAG_LEN};
 use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
 use crate::state::cipher_state::CipherState;
 

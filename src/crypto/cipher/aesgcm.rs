@@ -4,10 +4,9 @@ use aes_gcm::{
     AeadInOut, Aes256Gcm, KeyInit,
     aead::{Error, Tag},
 };
-use ring::aead::chacha20_poly1305_openssh::TAG_LEN;
 use tracing::debug;
 
-use crate::constants::ENCRYPTION_KEY_LEN;
+use crate::constants::{ENCRYPTION_KEY_LEN, TAG_LEN};
 use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 
 #[derive(Copy, Clone, Debug)]
