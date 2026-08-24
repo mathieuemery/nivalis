@@ -1,5 +1,8 @@
 //! X25519 implementation of the DH and DHKeypair traits
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use anyhow::Result;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 

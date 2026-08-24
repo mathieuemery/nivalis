@@ -1,6 +1,9 @@
 //! SymmetricState object of the Noise Handshake
 //! https://noiseprotocol.org/noise.html#the-symmetricstate-object
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use anyhow::{Result, anyhow, bail};
 use tracing::trace;
 

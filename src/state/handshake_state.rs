@@ -1,7 +1,9 @@
 //! HandshakeState of the noise handshake
 //! https://noiseprotocol.org/noise.html#the-handshakestate-object
 
-use std::marker::PhantomData;
+extern crate alloc;
+use alloc::{format, string::String, vec, vec::Vec};
+use core::marker::PhantomData;
 
 use anyhow::{Context, Result, anyhow, bail};
 use tracing::{debug, trace};

@@ -1,5 +1,8 @@
 //! X448 implementation of the DH and DHKeypair traits
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use anyhow::Result;
 use cx448::{MontgomeryPoint, Scalar, rand_core::OsRng, x448::x448};
 

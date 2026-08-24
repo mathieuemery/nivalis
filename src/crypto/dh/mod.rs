@@ -1,5 +1,8 @@
 //! Traits implemented by the DH algorithms
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use anyhow::Result;
 
 pub mod x25519;
