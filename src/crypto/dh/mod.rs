@@ -1,7 +1,9 @@
 //! Traits implemented by the DH algorithms
 
 extern crate alloc;
+
 use alloc::vec::Vec;
+use rand_core::{Rng, CryptoRng};
 
 use crate::error::NoiseError;
 
@@ -35,7 +37,7 @@ pub trait DH {
 
     fn pubkey_bytes(pk: &Self::PubKey) -> Vec<u8>;
 
-    fn generate_keypair() -> Self::Keypair;
+    fn generate_keypair<R: Rng + CryptoRng>(rng: &mut R) -> Self::Keypair;
 
     fn dh(sk: &Self::PrivKey, pk: &Self::PubKey) -> Self::SharedSecret;
 }

@@ -1,6 +1,7 @@
 //! Typestate builder for the Noise handshake
 
 extern crate alloc;
+
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 

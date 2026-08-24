@@ -1,9 +1,11 @@
 //! X448 implementation of the DH and DHKeypair traits
 
 extern crate alloc;
-use alloc::vec::Vec;
 
-use cx448::{MontgomeryPoint, Scalar, rand_core::OsRng, x448::x448};
+use alloc::vec::Vec;
+use rand_core::{Rng, CryptoRng};
+
+use cx448::{MontgomeryPoint, Scalar, WideScalarBytes, x448::x448};
 
 use crate::crypto::dh::{DH, DHKeypair};
 use crate::error::NoiseError;
@@ -69,8 +71,12 @@ impl DH for X448dh {
         pk.as_bytes().to_vec()
     }
 
-    fn generate_keypair() -> Self::Keypair {
-        let private = Scalar::random(&mut OsRng);
+    fn generate_keypair<R: Rng + CryptoRng>(rng: &mut R) -> Self::Keypair {
+        // Cannot use Scalar::random(&mut OsRng) as it uses incompatible version
+        // of rand_core
+        let mut wide_bytes = WideScalarBytes::default();
+        rng.fill_bytes(&mut wide_bytes);
+        let private = Scalar::from_bytes_mod_order_wide(&wide_bytes);
         let public = &private * &MontgomeryPoint::GENERATOR;
 
         X448Keys { public, private }

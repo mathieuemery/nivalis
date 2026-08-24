@@ -17,6 +17,8 @@ use nivalis::{
         handshake_state::{HandshakeResult, HandshakeState},
     },
 };
+use rand::rng;
+use rand_core::{Rng as Random, CryptoRng};
 
 /// Only used to simplify the usage
 type HsInit = HandshakeState<XX, Initiator, X25519dh, ChaChaPoly, Blake2s>;
@@ -39,12 +41,12 @@ fn build_responder(resp: &X25519Keys) -> HsResp {
         .expect("failed to build responder handshake state")
 }
 
-fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct, Ct)) {
+fn full_handshake<Rng: Random + CryptoRng>(init_hs: &mut HsInit, resp_hs: &mut HsResp, mut rng: Rng) -> ((Ct, Ct), (Ct, Ct)) {
     let mut wire = [0u8; MAX_HANDSHAKE_MSG];
     let mut buf = [0u8; MAX_HANDSHAKE_MSG];
 
     // Message 1: e
-    let len = match init_hs.write_message(b"", &mut wire).expect("write msg 1") {
+    let len = match init_hs.write_message(b"", &mut wire, &mut rng).expect("write msg 1") {
         HandshakeResult::Continue { bytes } => bytes,
         HandshakeResult::Complete { .. } => {
             panic!("Initiator shouldn't have finished at message 1")
@@ -56,7 +58,7 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
         .expect("read msg 1");
 
     // Message 2: e, ee, s, es
-    let len = match resp_hs.write_message(b"", &mut wire).expect("write msg 2") {
+    let len = match resp_hs.write_message(b"", &mut wire, &mut rng).expect("write msg 2") {
         HandshakeResult::Continue { bytes } => bytes,
         HandshakeResult::Complete { .. } => {
             panic!("Responder shouldn't have finished at message 2")
@@ -68,7 +70,7 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
         .expect("read msg 2");
 
     // Message 3: s, se
-    let (len, init_split) = match init_hs.write_message(b"", &mut wire).expect("write msg 3") {
+    let (len, init_split) = match init_hs.write_message(b"", &mut wire, &mut rng).expect("write msg 3") {
         HandshakeResult::Continue { .. } => {
             panic!("expected initiator to complete at message 3")
         }
@@ -136,14 +138,15 @@ fn round_trip(init_send: &mut Ct, resp_recv: &mut Ct, resp_send: &mut Ct, init_r
 }
 
 fn main() {
-    let init_static = X25519dh::generate_keypair();
-    let resp_static = X25519dh::generate_keypair();
+    let mut rng = rng();
+    let init_static = X25519dh::generate_keypair(&mut rng);
+    let resp_static = X25519dh::generate_keypair(&mut rng);
 
     let mut init_hs = build_initiator(&init_static);
     let mut resp_hs = build_responder(&resp_static);
 
     let ((mut init_send, mut init_recv), (mut resp_recv, mut resp_send)) =
-        full_handshake(&mut init_hs, &mut resp_hs);
+        full_handshake(&mut init_hs, &mut resp_hs, rng);
 
     println!("Handshake complete.");
 

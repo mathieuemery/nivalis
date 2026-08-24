@@ -5,6 +5,7 @@ extern crate alloc;
 
 use alloc::{format, string::String, vec, vec::Vec};
 use core::marker::PhantomData;
+use rand_core::{Rng as Random, CryptoRng};
 use tracing::{debug, trace};
 
 use crate::{
@@ -276,10 +277,11 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
-    pub fn write_message(
+    pub fn write_message<Rng: Random + CryptoRng>(
         &mut self,
         payload: &[u8],
         message_buffer: &mut [u8],
+        rng: &mut Rng,
     ) -> Result<HandshakeResult<C>, NoiseError> {
         debug!(
             "[write_message] step {} for initiator ? {}",
@@ -305,7 +307,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
 
                     let e: D::Keypair = match self.keys.e.take() {
                         Some(e) => e,
-                        None => D::generate_keypair(),
+                        None => D::generate_keypair(rng),
                     };
 
                     let pk_bytes = e.pubkey_bytes();

@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use rand_core::{Rng, CryptoRng};
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
 use crate::crypto::dh::{DH, DHKeypair};
@@ -69,8 +70,8 @@ impl DH for X25519dh {
         pk.as_bytes().to_vec()
     }
 
-    fn generate_keypair() -> Self::Keypair {
-        let private = StaticSecret::random();
+    fn generate_keypair<R: Rng + CryptoRng>(rng: &mut R) -> Self::Keypair {
+        let private = StaticSecret::random_from_rng(rng);
         let public = PublicKey::from(&private);
 
         X25519Keys { public, private }

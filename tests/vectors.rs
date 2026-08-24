@@ -18,6 +18,7 @@ use nivalis::{
     },
     types::Psk,
 };
+use rand::rng;
 use serde::{
     Deserialize, Serialize,
     de::{self, Deserializer, Unexpected, Visitor},
@@ -326,6 +327,7 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
     resp_hs: &mut HandshakeState<P, Responder, D, C, H>,
     vector: &TestVector,
 ) -> Result<(), String> {
+    let mut rng = rng();
     let messages = &vector.messages;
     let handshake_msg_count = P::HANDSHAKE.messages().len();
 
@@ -346,7 +348,7 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
         macro_rules! exchange {
             ($send:expr, $recv:expr) => {{
                 let send_res = $send
-                    .write_message(&message.payload, &mut wire)
+                    .write_message(&message.payload, &mut wire, &mut rng)
                     .map_err(|e| format!("write_message failed on message {i}: {e:?}"))?;
 
                 let (len, send_ciphers) = match send_res {
