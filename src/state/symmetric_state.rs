@@ -2,13 +2,13 @@
 //! https://noiseprotocol.org/noise.html#the-symmetricstate-object
 
 extern crate alloc;
-use alloc::vec::Vec;
 
-use anyhow::{Result, anyhow, bail};
+use alloc::vec::Vec;
 use tracing::trace;
 
 use crate::constants::{ENCRYPTION_KEY_LEN, MAX_MESSAGE_LEN, TAG_LEN};
 use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
+use crate::error::NoiseError;
 use crate::state::cipher_state::CipherState;
 
 pub struct SymmetricState<C: Cipher, H: Hash> {
@@ -68,54 +68,52 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         self.c_state = CipherState::initialize_key(Some(&key));
     }
 
-    pub fn get_handshake_hash(&self) -> Result<Vec<u8>> {
+    pub fn get_handshake_hash(&self) -> Result<Vec<u8>, NoiseError> {
         if !self.splitted {
-            bail!("GetHandshakeHash() called before Split()")
+            return Err(NoiseError::InvalidState(
+                "GetHandshakeHash() called before Split()",
+            ));
         }
 
         Ok(self.h.as_ref().to_vec())
     }
 
     /// CT isn't returned as spec defines because it mutates an output buffer
-    pub fn encrypt_and_hash(&mut self, plaintext: &[u8], buf: &mut [u8]) -> Result<usize> {
+    pub fn encrypt_and_hash(
+        &mut self,
+        plaintext: &[u8],
+        buf: &mut [u8],
+    ) -> Result<usize, NoiseError> {
         let ct_len = plaintext
             .len()
             .checked_add(TAG_LEN)
-            .ok_or_else(|| anyhow!("message length overflow"))?;
+            .ok_or(NoiseError::InvalidInput("message length overflow"))?;
 
         if ct_len > MAX_MESSAGE_LEN {
-            bail!("The message is too big: {ct_len} when max is {MAX_MESSAGE_LEN}");
+            return Err(NoiseError::InvalidInput("The message is too big}"));
         }
 
-        match self
+        let len = self
             .c_state
-            .encrypt_with_ad(self.h.as_ref(), plaintext, buf)
-        {
-            Ok(len) => {
-                self.mix_hash(&buf[..len]);
-                Ok(len)
-            }
-            Err(e) => bail!("Couldn't encrypt and hash the plaintext: {e}"),
-        }
+            .encrypt_with_ad(self.h.as_ref(), plaintext, buf)?;
+
+        self.mix_hash(&buf[..len]);
+        Ok(len)
     }
 
-    pub fn decrypt_and_hash(&mut self, ciphertext: &[u8], buf: &mut [u8]) -> Result<()> {
+    pub fn decrypt_and_hash(
+        &mut self,
+        ciphertext: &[u8],
+        buf: &mut [u8],
+    ) -> Result<(), NoiseError> {
         if ciphertext.len() > MAX_MESSAGE_LEN {
-            bail!(
-                "The message is too big: {} when max is {MAX_MESSAGE_LEN}",
-                ciphertext.len()
-            )
+            return Err(NoiseError::InvalidInput("The message is too long"));
         }
-        match self
-            .c_state
-            .decrypt_with_ad(self.h.as_ref(), ciphertext, buf)
-        {
-            Ok(_) => {
-                self.mix_hash(ciphertext);
-                Ok(())
-            }
-            Err(e) => bail!("Couldn't decrypt and hash the ciphertext: {e}"),
-        }
+        self.c_state
+            .decrypt_with_ad(self.h.as_ref(), ciphertext, buf)?;
+
+        self.mix_hash(ciphertext);
+        Ok(())
     }
 
     pub fn split<D: DH>(&mut self) -> (CipherState<C>, CipherState<C>) {

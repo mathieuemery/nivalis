@@ -3,7 +3,6 @@
 use core::fmt::Debug;
 
 use aes_gcm::aead::Error;
-use anyhow::Result;
 
 use crate::constants::{ENCRYPTION_KEY_LEN, NONCE_LEN};
 use crate::types::Nonce;

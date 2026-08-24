@@ -12,8 +12,11 @@ use nivalis::{
     },
     patterns::roles::{Initiator, Responder},
     patterns::*,
-    state::{cipher_state::CipherState, handshake_state::{HandshakeResult, HandshakeState}},
-    types::Psk
+    state::{
+        cipher_state::CipherState,
+        handshake_state::{HandshakeResult, HandshakeState},
+    },
+    types::Psk,
 };
 use serde::{
     Deserialize, Serialize,
@@ -246,10 +249,14 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
     let resp_remote_ephemeral = None;
     let mut resp_psks: Option<Psk> = None;
 
-    if let Some(psk) = &vector.init_psks && !psk.is_empty(){
+    if let Some(psk) = &vector.init_psks
+        && !psk.is_empty()
+    {
         init_psks = Some(psk[0].payload);
     }
-    if let Some(psk) = &vector.resp_psks && !psk.is_empty() {
+    if let Some(psk) = &vector.resp_psks
+        && !psk.is_empty()
+    {
         resp_psks = Some(psk[0].payload);
     }
 

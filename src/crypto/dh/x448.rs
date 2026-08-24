@@ -3,10 +3,10 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use anyhow::Result;
 use cx448::{MontgomeryPoint, Scalar, rand_core::OsRng, x448::x448};
 
 use crate::crypto::dh::{DH, DHKeypair};
+use crate::error::NoiseError;
 
 pub struct X448Keys {
     pub public: MontgomeryPoint,
@@ -49,15 +49,19 @@ impl DH for X448dh {
     type PubKey = MontgomeryPoint;
     type SharedSecret = [u8; Self::DHLEN];
 
-    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey> {
-        let sk_bytes: [u8; Self::DHLEN] = bytes.try_into()?;
+    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey, NoiseError> {
+        let sk_bytes: [u8; Self::DHLEN] = bytes
+            .try_into()
+            .map_err(|_| NoiseError::ConversionError("private key has wrong length for X448"))?;
+
         Ok(Scalar::from_bytes(&sk_bytes))
     }
 
-    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey> {
+    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey, NoiseError> {
         let arr: [u8; Self::DHLEN] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("expected 56-byte X448 key, got {}", bytes.len()))?;
+            .map_err(|_| NoiseError::ConversionError("public key has wrong length for X448"))?;
+
         Ok(MontgomeryPoint(arr))
     }
 

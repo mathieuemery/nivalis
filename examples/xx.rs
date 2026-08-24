@@ -44,10 +44,7 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
     let mut buf = [0u8; MAX_HANDSHAKE_MSG];
 
     // Message 1: e
-    let len = match init_hs
-        .write_message(b"", &mut wire)
-        .expect("write msg 1")
-    {
+    let len = match init_hs.write_message(b"", &mut wire).expect("write msg 1") {
         HandshakeResult::Continue { bytes } => bytes,
         HandshakeResult::Complete { .. } => {
             panic!("Initiator shouldn't have finished at message 1")
@@ -59,10 +56,7 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
         .expect("read msg 1");
 
     // Message 2: e, ee, s, es
-    let len = match resp_hs
-        .write_message(b"", &mut wire)
-        .expect("write msg 2")
-    {
+    let len = match resp_hs.write_message(b"", &mut wire).expect("write msg 2") {
         HandshakeResult::Continue { bytes } => bytes,
         HandshakeResult::Complete { .. } => {
             panic!("Responder shouldn't have finished at message 2")
@@ -74,10 +68,7 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
         .expect("read msg 2");
 
     // Message 3: s, se
-    let (len, init_split) = match init_hs
-        .write_message(b"", &mut wire)
-        .expect("write msg 3")
-    {
+    let (len, init_split) = match init_hs.write_message(b"", &mut wire).expect("write msg 3") {
         HandshakeResult::Continue { .. } => {
             panic!("expected initiator to complete at message 3")
         }
@@ -102,7 +93,6 @@ fn full_handshake(init_hs: &mut HsInit, resp_hs: &mut HsResp) -> ((Ct, Ct), (Ct,
             ..
         } => (initiator, responder),
     };
-
 
     (init_split, resp_split)
 }
