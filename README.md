@@ -85,11 +85,11 @@ This crate's performance is comparable to [`snow`](https://github.com/mcginty/sn
 
 | Benchmark            | snow         | nivalis      |
 | -------------------- | ------------ | ------------ |
-| NN Builder           | 255.10 ns    | 142.62 ns    |
-| XX Builder           | 25.344 µs    | 24.654 µs    |
-| NN Handshake         | 134.95 µs    | 137.83 µs    |
-| XX Handshake         | 328.87 µs    | 341.31 µs    |
-| Transport throughput | 1.2040 GiB/s | 1.2243 GiB/s |
+| XX Builder           | 25.164 µs    | 26.838 µs    |
+| NN Builder           | 229.30 ns    | 134.48 ns    |
+| XX Handshake         | 307.44 µs    | 309.85 µs    |
+| NN Handshake         | 120.38 µs    | 121.72 µs    |
+| Transport throughput | 1.2180 GiB/s | 1.2239 GiB/s |
 
 These numbers come from a single run on a personal computer, they are only documented to give you an idea of the performances between the two crates.
 
