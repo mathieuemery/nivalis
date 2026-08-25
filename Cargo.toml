@@ -25,10 +25,16 @@ tracing = { version = "0.1.44", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets"] }
 
 [dev-dependencies]
+criterion = "0.8.2"
 hex = "0.4.3"
 rand = "0.10.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+snow = "0.10.0"
+
+[[bench]]
+name = "compare_benches"
+harness = false
 
 [[example]]
 name = "xx"
