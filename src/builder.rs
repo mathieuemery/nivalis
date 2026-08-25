@@ -1,11 +1,16 @@
 //! Typestate builder for the Noise handshake
 
-use std::marker::PhantomData;
+extern crate alloc;
 
-use anyhow::{Result, bail};
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
-use crate::crypto::dh::DHKeypair;
-use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
+use crate::crypto::{
+    cipher::Cipher,
+    dh::{DH, DHKeypair},
+    hash::Hash,
+};
+use crate::error::{MissingKey, NoiseError};
 use crate::patterns::roles::*;
 use crate::state::handshake_state::{HandshakeKeys, HandshakeState};
 use crate::types::Psk;
@@ -68,27 +73,21 @@ where
         remote_ephemeral: Option<D::PubKey>,
         psk: Option<Psk>,
         prologue: Vec<u8>,
-    ) -> Result<HandshakeState<P, R, D, C, H>> {
+    ) -> Result<HandshakeState<P, R, D, C, H>, NoiseError> {
         if P::LOCAL_STATIC_REQUIRED && local_static.is_none() {
-            bail!("missing local_static: this pattern/role requires a local static key",);
+            return Err(NoiseError::MissingRequirements(MissingKey::LocalStatic));
         }
         if P::REMOTE_STATIC_REQUIRED && remote_static.is_none() {
-            bail!(
-                "missing remote_static: the peer's static key is a pre-message for this pattern/role"
-            );
+            return Err(NoiseError::MissingRequirements(MissingKey::RemoteStatic));
         }
         if P::LOCAL_EPHEMERAL_REQUIRED && local_ephemeral.is_none() {
-            bail!(
-                "missing local_ephemeral: this role sends a message and needs its own ephemeral key"
-            );
+            return Err(NoiseError::MissingRequirements(MissingKey::LocalEphemeral));
         }
         if P::REMOTE_EPHEMERAL_REQUIRED && remote_ephemeral.is_none() {
-            bail!(
-                "missing remote_ephemeral: the peer's ephemeral key is a pre-message for this pattern/role"
-            );
+            return Err(NoiseError::MissingRequirements(MissingKey::RemoteEphemeral));
         }
         if P::PSK_REQUIRED && psk.is_none() {
-            bail!("missing psk: this pattern requires at least one pre-shared key");
+            return Err(NoiseError::MissingRequirements(MissingKey::Psk));
         }
 
         let s: Option<D::Keypair> = match local_static {
@@ -228,13 +227,7 @@ where
     }
 }
 
-impl<
-    P, R, D, C, H,
-    const LS: bool,
-    const RS: bool,
-    const LE: bool,
-    const RE: bool,
->
+impl<P, R, D, C, H, const LS: bool, const RS: bool, const LE: bool, const RE: bool>
     HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE, false>
 where
     P: PatternRequirements<R>,
@@ -243,13 +236,7 @@ where
     C: Cipher,
     H: Hash,
 {
-    pub fn psk(
-        self,
-        psk: [u8; 32],
-    ) -> HandshakeParamsBuilder<
-        P, R, D, C, H,
-        LS, RS, LE, RE, true
-    > {
+    pub fn psk(self, psk: [u8; 32]) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE, true> {
         HandshakeParamsBuilder {
             local_static: self.local_static,
             remote_static: self.remote_static,
@@ -276,7 +263,7 @@ where
         self
     }
 
-    pub fn build(self) -> Result<HandshakeState<P, R, D, C, H>> {
+    pub fn build(self) -> Result<HandshakeState<P, R, D, C, H>, NoiseError> {
         const {
             assert!(
                 LS || !P::LOCAL_STATIC_REQUIRED,

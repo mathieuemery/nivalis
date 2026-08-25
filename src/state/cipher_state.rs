@@ -1,9 +1,8 @@
 //! CipherState object of the Noise Handshake
 //! https://noiseprotocol.org/noise.html#the-cipherstate-object
 
-use anyhow::{Result, bail};
-
 use crate::crypto::cipher::{Cipher, InternalCipherState};
+use crate::error::NoiseError;
 
 const MAX_N_VALUE: u64 = u64::MAX;
 
@@ -29,12 +28,19 @@ impl<C: Cipher> CipherState<C> {
         self.n = nonce
     }
 
-    pub fn encrypt_with_ad(&mut self, ad: &[u8], pt_buf: &[u8], buf: &mut [u8]) -> Result<usize> {
+    pub fn encrypt_with_ad(
+        &mut self,
+        ad: &[u8],
+        pt_buf: &[u8],
+        buf: &mut [u8],
+    ) -> Result<usize, NoiseError> {
         if self.n + 1 == MAX_N_VALUE {
-            bail!("N is already at the max value");
+            return Err(NoiseError::MaxNValue);
         }
         let size = if let Some(c) = &self.k {
-            let size = c.encrypt(self.n, ad, pt_buf, buf)?;
+            let size = c
+                .encrypt(self.n, ad, pt_buf, buf)
+                .map_err(|_| NoiseError::InvalidInput("Couldn't encrypt the message"))?;
             self.n += 1;
             size
         } else {
@@ -45,12 +51,18 @@ impl<C: Cipher> CipherState<C> {
         Ok(size)
     }
 
-    pub fn decrypt_with_ad(&mut self, ad: &[u8], ct_buf: &[u8], buf: &mut [u8]) -> Result<()> {
+    pub fn decrypt_with_ad(
+        &mut self,
+        ad: &[u8],
+        ct_buf: &[u8],
+        buf: &mut [u8],
+    ) -> Result<(), NoiseError> {
         if self.n + 1 == MAX_N_VALUE {
-            bail!("N is already at the max value");
+            return Err(NoiseError::MaxNValue);
         }
         if let Some(c) = &self.k {
-            c.decrypt(self.n, ad, ct_buf, buf)?;
+            c.decrypt(self.n, ad, ct_buf, buf)
+                .map_err(|_| NoiseError::InvalidInput("Couldn't decrypt the message"))?;
             self.n += 1;
         } else {
             buf[..ct_buf.len()].copy_from_slice(ct_buf);
@@ -59,11 +71,11 @@ impl<C: Cipher> CipherState<C> {
         Ok(())
     }
 
-    pub fn rekey(mut self) -> Result<()> {
+    pub fn rekey(mut self) -> Result<(), NoiseError> {
         if let Some(c) = &mut self.k {
-            c.rekey()?;
+            c.rekey().map_err(|_| NoiseError::MaxNValue)?
         } else {
-            bail!("Cannot rekey a k that isn't set.")
+            return Err(NoiseError::Rekey("Cannot rekey a k that isn't set."));
         }
 
         Ok(())

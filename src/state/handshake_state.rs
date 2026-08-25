@@ -1,9 +1,11 @@
 //! HandshakeState of the noise handshake
 //! https://noiseprotocol.org/noise.html#the-handshakestate-object
 
-use std::marker::PhantomData;
+extern crate alloc;
 
-use anyhow::{Context, Result, anyhow, bail};
+use alloc::{format, string::String, vec, vec::Vec};
+use core::marker::PhantomData;
+use rand_core::{Rng as Random, CryptoRng};
 use tracing::{debug, trace};
 
 use crate::{
@@ -13,6 +15,7 @@ use crate::{
         dh::{DH, DHKeypair},
         hash::Hash,
     },
+    error::{MissingKey, NoiseError},
 };
 
 use crate::patterns::{Pattern, Token, roles::RoleMarker};
@@ -39,13 +42,13 @@ pub struct HandshakeKeys<D: DH> {
     pub psk: Option<Psk>,
 }
 
-fn checked_message_end(buf_index: usize, len: usize) -> Result<usize> {
+fn checked_message_end(buf_index: usize, len: usize) -> Result<usize, NoiseError> {
     let end = buf_index
         .checked_add(len)
-        .ok_or_else(|| anyhow!("Noise message length overflow"))?;
+        .ok_or(NoiseError::InvalidInput("Noise message length overflow"))?;
 
     if end > MAX_MESSAGE_LEN {
-        bail!("Noise message is too large: {end} bytes (max {MAX_MESSAGE_LEN})");
+        return Err(NoiseError::InvalidInput("Noise message is too large.)"))
     }
 
     Ok(end)
@@ -56,7 +59,6 @@ pub struct HandshakeState<P: Pattern, R: RoleMarker, D: DH, C: Cipher, H: Hash> 
     keys: HandshakeKeys<D>,
     e_set: bool,
     step: usize,
-    psk_index: u8,
     _marker: PhantomData<(P, R)>,
 }
 
@@ -66,15 +68,18 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         tokens: &[Token],
         s: Option<&D::Keypair>,
         e: Option<&D::Keypair>,
-    ) -> Result<()> {
+    ) -> Result<(), NoiseError> {
         for token in tokens {
             match token {
                 Token::S => {
-                    let s = s.ok_or_else(|| anyhow::anyhow!("Missing static key"))?;
+                    let s =
+                        s.ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
                     state.mix_hash(&s.pubkey_bytes());
                 }
                 Token::E => {
-                    let e = e.ok_or_else(|| anyhow::anyhow!("Missing ephemeral key"))?;
+                    let e = e.ok_or({
+                        NoiseError::MissingRequirements(MissingKey::LocalEphemeral)
+                    })?;
                     state.mix_hash(&e.pubkey_bytes());
                 }
                 _ => unreachable!(),
@@ -89,15 +94,18 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         tokens: &[Token],
         rs: Option<&D::PubKey>,
         re: Option<&D::PubKey>,
-    ) -> Result<()> {
+    ) -> Result<(), NoiseError> {
         for token in tokens {
             match token {
                 Token::S => {
-                    let s = rs.ok_or_else(|| anyhow::anyhow!("Missing static key"))?;
+                    let s =
+                        rs.ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
                     state.mix_hash(&D::pubkey_bytes(s));
                 }
                 Token::E => {
-                    let e = re.ok_or_else(|| anyhow::anyhow!("Missing ephemeral key"))?;
+                    let e = re.ok_or({
+                        NoiseError::MissingRequirements(MissingKey::LocalEphemeral)
+                    })?;
                     state.mix_hash(&D::pubkey_bytes(e));
                 }
                 _ => unreachable!(),
@@ -113,7 +121,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         format!("Noise_{}_{}_{}_{}", P::NAME, D::NAME, C::NAME, H::NAME)
     }
 
-    pub fn initialize(prologue: &[u8], keys: HandshakeKeys<D>) -> Result<Self> {
+    pub fn initialize(prologue: &[u8], keys: HandshakeKeys<D>) -> Result<Self, NoiseError> {
         let protocol_name = Self::canonical_name();
 
         let mut s_state = SymmetricState::initialize_symmetric(protocol_name.as_bytes());
@@ -156,127 +164,125 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
             keys,
             e_set: false,
             step: 0,
-            psk_index: 0,
             _marker: PhantomData,
         })
     }
 
-    fn mix_ee(&mut self) -> Result<()> {
+    fn mix_ee(&mut self) -> Result<(), NoiseError> {
         let e = self
             .keys
             .e
             .as_ref()
-            .ok_or_else(|| anyhow!("Missing e for ee at step {}", self.step))?;
+            .ok_or(NoiseError::MissingRequirements(MissingKey::LocalEphemeral))?;
 
         let re = self
             .keys
             .re
             .as_ref()
-            .ok_or_else(|| anyhow!("Missing re for ee at step {}.", self.step))?;
+            .ok_or(NoiseError::MissingRequirements(MissingKey::RemoteEphemeral))?;
 
         self.s_state.mix_key::<D>(D::dh(e.private(), re).as_ref());
         Ok(())
     }
 
-    fn mix_es(&mut self) -> Result<()> {
-        let dh_res = if R::IS_INITIATOR {
-            let e = self
-                .keys
-                .e
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing e for es at step {}", self.step))?;
-            let rs = self
-                .keys
-                .rs
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing rs for es at step {}", self.step))?;
+    fn mix_es(&mut self) -> Result<(), NoiseError> {
+        let dh_res =
+            if R::IS_INITIATOR {
+                let e =
+                    self.keys.e.as_ref().ok_or({
+                        NoiseError::MissingRequirements(MissingKey::LocalEphemeral)
+                    })?;
+                let rs = self
+                    .keys
+                    .rs
+                    .as_ref()
+                    .ok_or(NoiseError::MissingRequirements(MissingKey::RemoteStatic))?;
 
-            D::dh(e.private(), rs)
-        } else {
-            let s = self
-                .keys
-                .s
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing s for es at step {}", self.step))?;
-            let re = self
-                .keys
-                .re
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing re for es at step {}", self.step))?;
+                D::dh(e.private(), rs)
+            } else {
+                let s = self
+                    .keys
+                    .s
+                    .as_ref()
+                    .ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
+                let re =
+                    self.keys.re.as_ref().ok_or({
+                        NoiseError::MissingRequirements(MissingKey::RemoteEphemeral)
+                    })?;
 
-            D::dh(s.private(), re)
-        };
-
-        self.s_state.mix_key::<D>(dh_res.as_ref());
-        Ok(())
-    }
-
-    fn mix_se(&mut self) -> Result<()> {
-        let dh_res = if R::IS_INITIATOR {
-            let s = self
-                .keys
-                .s
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing s for se at step {}", self.step))?;
-            let re = self
-                .keys
-                .re
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing re for se at step {}", self.step))?;
-
-            D::dh(s.private(), re)
-        } else {
-            let e = self
-                .keys
-                .e
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing e for se at step {}", self.step))?;
-            let rs = self
-                .keys
-                .rs
-                .as_ref()
-                .ok_or_else(|| anyhow!("Missing rs for se at step {}", self.step))?;
-
-            D::dh(e.private(), rs)
-        };
+                D::dh(s.private(), re)
+            };
 
         self.s_state.mix_key::<D>(dh_res.as_ref());
         Ok(())
     }
 
-    fn mix_ss(&mut self) -> Result<()> {
+    fn mix_se(&mut self) -> Result<(), NoiseError> {
+        let dh_res =
+            if R::IS_INITIATOR {
+                let s = self
+                    .keys
+                    .s
+                    .as_ref()
+                    .ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
+                let re =
+                    self.keys.re.as_ref().ok_or({
+                        NoiseError::MissingRequirements(MissingKey::RemoteEphemeral)
+                    })?;
+
+                D::dh(s.private(), re)
+            } else {
+                let e =
+                    self.keys.e.as_ref().ok_or({
+                        NoiseError::MissingRequirements(MissingKey::LocalEphemeral)
+                    })?;
+                let rs = self
+                    .keys
+                    .rs
+                    .as_ref()
+                    .ok_or(NoiseError::MissingRequirements(MissingKey::RemoteStatic))?;
+
+                D::dh(e.private(), rs)
+            };
+
+        self.s_state.mix_key::<D>(dh_res.as_ref());
+        Ok(())
+    }
+
+    fn mix_ss(&mut self) -> Result<(), NoiseError> {
         let s = self
             .keys
             .s
             .as_ref()
-            .ok_or_else(|| anyhow!("Missing s for ss at step {}", self.step))?;
+            .ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
         let rs = self
             .keys
             .rs
             .as_ref()
-            .ok_or_else(|| anyhow!("Missing rs for ss at step {}", self.step))?;
+            .ok_or(NoiseError::MissingRequirements(MissingKey::RemoteStatic))?;
 
         self.s_state.mix_key::<D>(D::dh(s.private(), rs).as_ref());
         Ok(())
     }
 
     /// Todo: Remove expect
-    fn mix_psk(&mut self, psk_index: u8) -> Result<()> {
+    fn mix_psk(&mut self) -> Result<(), NoiseError> {
         let psk = self
             .keys
             .psk
-            .ok_or_else(|| anyhow!("No PSK provided for index: {psk_index}"))?;
+            .ok_or(NoiseError::MissingRequirements(MissingKey::Psk))?;
 
         self.s_state.mix_key_and_hash::<D>(&psk);
 
         Ok(())
     }
 
-    pub fn write_message(
+    pub fn write_message<Rng: Random + CryptoRng>(
         &mut self,
         payload: &[u8],
         message_buffer: &mut [u8],
-    ) -> Result<HandshakeResult<C>> {
+        rng: &mut Rng,
+    ) -> Result<HandshakeResult<C>, NoiseError> {
         debug!(
             "[write_message] step {} for initiator ? {}",
             self.step,
@@ -286,7 +292,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         let messages = P::HANDSHAKE.messages();
 
         if self.step >= messages.len() {
-            bail!("Handshake is already finished.");
+            return Err(NoiseError::HandshakeFinished);
         }
 
         let mut buf_index = 0;
@@ -296,12 +302,12 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
             match token {
                 Token::E => {
                     if self.e_set {
-                        bail!("e must be empty");
+                        return Err(NoiseError::InvalidState("e must be empty"));
                     }
 
                     let e: D::Keypair = match self.keys.e.take() {
                         Some(e) => e,
-                        None => D::generate_keypair(),
+                        None => D::generate_keypair(rng),
                     };
 
                     let pk_bytes = e.pubkey_bytes();
@@ -309,14 +315,14 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                     let end = checked_message_end(buf_index, pk_bytes.len())?;
 
                     if message_buffer.len() < end {
-                        bail!("Truncated message for e at step {}", self.step);
+                        return Err(NoiseError::InvalidInput("Truncated message"));
                     }
 
                     self.keys.e = Some(e);
                     self.e_set = true;
 
                     if message_buffer.len() < buf_index + pk_bytes.len() {
-                        bail!("Truncated message for e at step {}", self.step);
+                        return Err(NoiseError::InvalidInput("Truncated message"));
                     }
 
                     message_buffer[buf_index..buf_index + pk_bytes.len()]
@@ -335,21 +341,19 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                         .keys
                         .s
                         .as_ref()
-                        .ok_or_else(|| anyhow!("No static key provided"))?
+                        .ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?
                         .pubkey_bytes();
 
                     let s_len = pk_bytes
                         .len()
                         .checked_add(TAG_LEN)
-                        .ok_or_else(|| anyhow!("Overflow during S pattern."))?;
+                        .ok_or(NoiseError::InvalidInput("Overflow during S pattern."))?;
 
                     let end = checked_message_end(buf_index, s_len)?;
-                    if message_buffer.len() < end {
-                        bail!("Message buffer is full");
-                    }
-
-                    if pk_bytes.len() + TAG_LEN > message_buffer.len() - buf_index {
-                        bail!("Message buffer is full")
+                    if message_buffer.len() < end
+                        || pk_bytes.len() + TAG_LEN > message_buffer.len() - buf_index
+                    {
+                        return Err(NoiseError::InvalidState("Message buffer is full"));
                     }
 
                     let n = self.s_state.encrypt_and_hash(
@@ -368,17 +372,14 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                 Token::ES => self.mix_es()?,
                 Token::SE => self.mix_se()?,
                 Token::SS => self.mix_ss()?,
-                Token::PSK => {
-                    self.mix_psk(self.psk_index)?;
-                    self.psk_index += 1;
-                }
+                Token::PSK => self.mix_psk()?,
             }
         }
 
         self.step += 1;
 
         if payload.len() > message_buffer.len() - buf_index {
-            bail!("No place left for the payload")
+            return Err(NoiseError::InvalidState("No place left for the payload"));
         }
 
         let payload_ct_len = self
@@ -387,7 +388,9 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
 
         let end = checked_message_end(buf_index, payload_ct_len)?;
         if message_buffer.len() < end {
-            bail!("Message is bigger than the maximum allowed");
+            return Err(NoiseError::InvalidInput(
+                "Message is bigger than the maximum allowed",
+            ));
         }
 
         buf_index = end;
@@ -409,12 +412,9 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         &mut self,
         message: &[u8],
         payload_buffer: &mut [u8],
-    ) -> Result<HandshakeResult<C>> {
+    ) -> Result<HandshakeResult<C>, NoiseError> {
         if message.len() > MAX_MESSAGE_LEN {
-            bail!(
-                "Received a message that is too long: {} when max is {MAX_MESSAGE_LEN}",
-                message.len()
-            )
+            return Err(NoiseError::InvalidInput("Message received too big"));
         }
         debug!(
             "[read_message] step {} for initiator ? {}",
@@ -424,7 +424,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         let messages = P::HANDSHAKE.messages();
 
         if self.step >= messages.len() {
-            bail!("Handshake is already finished.");
+            return Err(NoiseError::HandshakeFinished);
         }
 
         let mut buf_index = 0;
@@ -434,18 +434,17 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
             match token {
                 Token::E => {
                     if self.keys.re.is_some() {
-                        bail!("re must be empty");
+                        return Err(NoiseError::InvalidState("re must be empty"));
                     }
 
                     if message.len() < buf_index + D::DHLEN {
-                        bail!("Truncated message for e.")
+                        return Err(NoiseError::InvalidState("Truncated message for e"));
                     }
 
                     let re_bytes = &message[buf_index..buf_index + D::DHLEN];
                     buf_index += D::DHLEN;
 
-                    let re = D::pubkey_from_bytes(re_bytes)
-                        .context("re's bytes are not a valid public key")?;
+                    let re = D::pubkey_from_bytes(re_bytes)?;
                     self.keys.re = Some(re);
 
                     self.s_state.mix_hash(re_bytes);
@@ -462,7 +461,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                     };
 
                     if message.len() < buf_index + len {
-                        bail!("Truncated message for e.")
+                        return Err(NoiseError::InvalidState("Truncated message for e"));
                     }
 
                     let temp = &message[buf_index..buf_index + len];
@@ -473,18 +472,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                     let mut rs = vec![0u8; D::DHLEN + TAG_LEN];
                     self.s_state.decrypt_and_hash(temp, &mut rs)?;
 
-                    self.keys.rs = Some(
-                        D::pubkey_from_bytes(&rs[..D::DHLEN]).context("Invalid rs decrypted")?,
-                    );
+                    self.keys.rs = Some(D::pubkey_from_bytes(&rs[..D::DHLEN])?);
                 }
                 Token::EE => self.mix_ee()?,
                 Token::ES => self.mix_es()?,
                 Token::SE => self.mix_se()?,
                 Token::SS => self.mix_ss()?,
-                Token::PSK => {
-                    self.mix_psk(self.psk_index)?;
-                    self.psk_index += 1;
-                }
+                Token::PSK => self.mix_psk()?,
             }
         }
 

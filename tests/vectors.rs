@@ -12,9 +12,13 @@ use nivalis::{
     },
     patterns::roles::{Initiator, Responder},
     patterns::*,
-    state::{cipher_state::CipherState, handshake_state::{HandshakeResult, HandshakeState}},
-    types::Psk
+    state::{
+        cipher_state::CipherState,
+        handshake_state::{HandshakeResult, HandshakeState},
+    },
+    types::Psk,
 };
+use rand::rng;
 use serde::{
     Deserialize, Serialize,
     de::{self, Deserializer, Unexpected, Visitor},
@@ -246,10 +250,14 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
     let resp_remote_ephemeral = None;
     let mut resp_psks: Option<Psk> = None;
 
-    if let Some(psk) = &vector.init_psks && !psk.is_empty(){
+    if let Some(psk) = &vector.init_psks
+        && !psk.is_empty()
+    {
         init_psks = Some(psk[0].payload);
     }
-    if let Some(psk) = &vector.resp_psks && !psk.is_empty() {
+    if let Some(psk) = &vector.resp_psks
+        && !psk.is_empty()
+    {
         resp_psks = Some(psk[0].payload);
     }
 
@@ -319,6 +327,7 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
     resp_hs: &mut HandshakeState<P, Responder, D, C, H>,
     vector: &TestVector,
 ) -> Result<(), String> {
+    let mut rng = rng();
     let messages = &vector.messages;
     let handshake_msg_count = P::HANDSHAKE.messages().len();
 
@@ -339,7 +348,7 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
         macro_rules! exchange {
             ($send:expr, $recv:expr) => {{
                 let send_res = $send
-                    .write_message(&message.payload, &mut wire)
+                    .write_message(&message.payload, &mut wire, &mut rng)
                     .map_err(|e| format!("write_message failed on message {i}: {e:?}"))?;
 
                 let (len, send_ciphers) = match send_res {

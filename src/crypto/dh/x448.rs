@@ -1,9 +1,14 @@
 //! X448 implementation of the DH and DHKeypair traits
 
-use anyhow::Result;
-use cx448::{MontgomeryPoint, Scalar, rand_core::OsRng, x448::x448};
+extern crate alloc;
+
+use alloc::vec::Vec;
+use rand_core::{Rng, CryptoRng};
+
+use cx448::{MontgomeryPoint, Scalar, WideScalarBytes, x448::x448};
 
 use crate::crypto::dh::{DH, DHKeypair};
+use crate::error::NoiseError;
 
 pub struct X448Keys {
     pub public: MontgomeryPoint,
@@ -46,15 +51,19 @@ impl DH for X448dh {
     type PubKey = MontgomeryPoint;
     type SharedSecret = [u8; Self::DHLEN];
 
-    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey> {
-        let sk_bytes: [u8; Self::DHLEN] = bytes.try_into()?;
+    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey, NoiseError> {
+        let sk_bytes: [u8; Self::DHLEN] = bytes
+            .try_into()
+            .map_err(|_| NoiseError::ConversionError("private key has wrong length for X448"))?;
+
         Ok(Scalar::from_bytes(&sk_bytes))
     }
 
-    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey> {
+    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey, NoiseError> {
         let arr: [u8; Self::DHLEN] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("expected 56-byte X448 key, got {}", bytes.len()))?;
+            .map_err(|_| NoiseError::ConversionError("public key has wrong length for X448"))?;
+
         Ok(MontgomeryPoint(arr))
     }
 
@@ -62,8 +71,12 @@ impl DH for X448dh {
         pk.as_bytes().to_vec()
     }
 
-    fn generate_keypair() -> Self::Keypair {
-        let private = Scalar::random(&mut OsRng);
+    fn generate_keypair<R: Rng + CryptoRng>(rng: &mut R) -> Self::Keypair {
+        // Cannot use Scalar::random(&mut OsRng) as it uses incompatible version
+        // of rand_core
+        let mut wide_bytes = WideScalarBytes::default();
+        rng.fill_bytes(&mut wide_bytes);
+        let private = Scalar::from_bytes_mod_order_wide(&wide_bytes);
         let public = &private * &MontgomeryPoint::GENERATOR;
 
         X448Keys { public, private }

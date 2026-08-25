@@ -1,9 +1,13 @@
 //! X25519 implementation of the DH and DHKeypair traits
 
-use anyhow::Result;
+extern crate alloc;
+
+use alloc::vec::Vec;
+use rand_core::{Rng, CryptoRng};
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
 use crate::crypto::dh::{DH, DHKeypair};
+use crate::error::NoiseError;
 
 pub struct X25519Keys {
     pub public: PublicKey,
@@ -46,15 +50,19 @@ impl DH for X25519dh {
     type PubKey = PublicKey;
     type SharedSecret = SharedSecret;
 
-    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey> {
-        let sk_bytes: [u8; Self::DHLEN] = bytes.try_into()?;
+    fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey, NoiseError> {
+        let sk_bytes: [u8; Self::DHLEN] = bytes
+            .try_into()
+            .map_err(|_| NoiseError::ConversionError("private key has wrong length for X25519"))?;
+
         Ok(From::from(sk_bytes))
     }
 
-    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey> {
+    fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey, NoiseError> {
         let arr: [u8; Self::DHLEN] = bytes
             .try_into()
-            .map_err(|_| anyhow::anyhow!("expected 56-byte X448 key, got {}", bytes.len()))?;
+            .map_err(|_| NoiseError::ConversionError("public key has wrong length for X25519"))?;
+
         Ok(PublicKey::from(arr))
     }
 
@@ -62,8 +70,8 @@ impl DH for X25519dh {
         pk.as_bytes().to_vec()
     }
 
-    fn generate_keypair() -> Self::Keypair {
-        let private = StaticSecret::random();
+    fn generate_keypair<R: Rng + CryptoRng>(rng: &mut R) -> Self::Keypair {
+        let private = StaticSecret::random_from_rng(rng);
         let public = PublicKey::from(&private);
 
         X25519Keys { public, private }

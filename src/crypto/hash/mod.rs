@@ -1,5 +1,8 @@
 //! Traits implemented by the hash functions
 
+extern crate alloc;
+use alloc::{vec, vec::Vec};
+
 pub mod blake2b;
 pub mod blake2s;
 pub mod sha256;
