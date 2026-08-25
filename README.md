@@ -80,6 +80,24 @@ If you tried to `.build()` the initiator above without calling `.remote_static_k
 
 See `examples/` for a full handshake-to-transport walkthrough, including sending and decrypting an encrypted message once the handshake completes.
 
+## Benchmarks
+This crate's performance is comparable to [`snow`](https://github.com/mcginty/snow). The benchmarks below (that were adapted from snow's) compare equivalent operations between the two libraries using the same patterns and ciphersuites :
+
+| Benchmark            | snow         | nivalis      |
+| -------------------- | ------------ | ------------ |
+| NN Builder           | 255.10 ns    | 142.62 ns    |
+| XX Builder           | 25.344 µs    | 24.654 µs    |
+| NN Handshake         | 134.95 µs    | 137.83 µs    |
+| XX Handshake         | 328.87 µs    | 341.31 µs    |
+| Transport throughput | 1.2040 GiB/s | 1.2243 GiB/s |
+
+These numbers come from a single run on a personal computer, they are only documented to give you an idea of the performances between the two crates.
+
+To test it yourself on your computer, run:
+```sh
+ ╰─λ cargo bench
+```
+
 ## Status
 
 `nivalis` has **not been independently security-reviewed or audited**. It passes the standard Noise test vectors, which gives confidence in protocol-level correctness, but that is not a substitute for cryptographic review. Do not use this in a security-critical context without an audit. Use at your own risk, and please report anything that looks wrong.
