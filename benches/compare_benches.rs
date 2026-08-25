@@ -9,7 +9,7 @@ use nivalis::{
     crypto::{
         cipher::chacha20::ChaChaPoly,
         dh::{DH, DHKeypair, x25519::X25519dh},
-        hash::{blake2b::Blake2b, sha256::Sha256},
+        hash::{blake2b::Blake2b, blake2s::Blake2s, sha256::Sha256},
     },
     patterns::{NN, XX, roles::{Initiator, Responder}},
     state::handshake_state::HandshakeResult,
@@ -212,11 +212,11 @@ fn bench_transport(c: &mut Criterion) {
     });
 
     transport_group.bench_function("Nivalis ChaChaPoly_BLAKE2s throughput", |b| {
-        let mut h_i = NewBuilder::<NN, Initiator, X25519dh, ChaChaPoly, Blake2b>::new()
+        let mut h_i = NewBuilder::<NN, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
                 .build()
                 .unwrap();
 
-        let mut h_r = NewBuilder::<NN, Responder, X25519dh, ChaChaPoly, Blake2b>::new()
+        let mut h_r = NewBuilder::<NN, Responder, X25519dh, ChaChaPoly, Blake2s>::new()
             .build()
             .unwrap();
 
