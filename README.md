@@ -1,6 +1,6 @@
 # nivalis
 
-A Rust implementation of the [Noise Protocol Framework](https://noiseprotocol.org/) revision 34.
+A `no_std` implementation of the [Noise Protocol Framework](https://noiseprotocol.org/) revision 34 in Rust.
 
 ## Why this exists
 
@@ -39,6 +39,12 @@ For Hash:
 - Blake2s
 - SHA256
 - SHA512
+
+## `no_std`
+
+This crate has been implemented as `no_std`-only.
+
+Because `nivalis` does not assume an OS or runtime environment, it doesn't provide a default source of randomness. Applications must provide an RNG implementation appropriate for their target.
 
 ## Test vectors
 

@@ -6,10 +6,10 @@ documentation = "https://docs.rs/nivalis/"
 repository = "https://github.com/mathieuemery/nivalis"
 authors = ["Mathieu Emery <mathieuemery@proton.me>"]
 license = "MIT"
-categories = ["cryptography"]
+categories = ["cryptography", "no-std"]
 readme = "README.md"
 keywords = ["noise", "protocol", "crypto", "handshake"]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 
