@@ -9,27 +9,24 @@ use rand_core::{Rng as Random, CryptoRng};
 use tracing::{debug, trace};
 
 use crate::{
-    constants::{MAX_MESSAGE_LEN, TAG_LEN},
-    crypto::{
+    constants::{MAX_MESSAGE_LEN, TAG_LEN}, crypto::{
         cipher::Cipher,
         dh::{DH, DHKeypair},
         hash::Hash,
-    },
-    error::{MissingKey, NoiseError},
+    }, error::{MissingKey, NoiseError}, state::transport_state::TransportState,
 };
 
 use crate::patterns::{Pattern, Token, roles::RoleMarker};
-use crate::state::{cipher_state::CipherState, symmetric_state::SymmetricState};
+use crate::state::symmetric_state::SymmetricState;
 use crate::types::Psk;
 
-pub enum HandshakeResult<C: Cipher> {
+pub enum HandshakeResult<C: Cipher, D: DH, R: RoleMarker> {
     Continue {
         bytes: usize,
     },
     Complete {
         bytes_written: usize,
-        initiator: CipherState<C>,
-        responder: CipherState<C>,
+        transport_state: TransportState<C, D, R>,
         handshake_hash: Vec<u8>,
     },
 }
@@ -282,7 +279,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         payload: &[u8],
         message_buffer: &mut [u8],
         rng: &mut Rng,
-    ) -> Result<HandshakeResult<C>, NoiseError> {
+    ) -> Result<HandshakeResult<C, D, R>, NoiseError> {
         debug!(
             "[write_message] step {} for initiator ? {}",
             self.step,
@@ -397,10 +394,11 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
 
         if self.step == messages.len() {
             let (c1, c2) = self.s_state.split::<D>();
+            let remote_pk = self.keys.rs.take();
+            let transport_state = TransportState::new(c1, c2, remote_pk);
             Ok(HandshakeResult::Complete {
                 bytes_written: buf_index,
-                initiator: c1,
-                responder: c2,
+                transport_state,
                 handshake_hash: self.s_state.get_handshake_hash()?,
             })
         } else {
@@ -412,7 +410,7 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         &mut self,
         message: &[u8],
         payload_buffer: &mut [u8],
-    ) -> Result<HandshakeResult<C>, NoiseError> {
+    ) -> Result<HandshakeResult<C, D, R>, NoiseError> {
         if message.len() > MAX_MESSAGE_LEN {
             return Err(NoiseError::InvalidInput("Message received too big"));
         }
@@ -490,10 +488,11 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
 
         if self.step == messages.len() {
             let (c1, c2) = self.s_state.split::<D>();
+            let remote_pk = self.keys.rs.take();
+            let transport_state = TransportState::new(c1, c2, remote_pk);
             Ok(HandshakeResult::Complete {
                 bytes_written: message.len(),
-                initiator: c1,
-                responder: c2,
+                transport_state,
                 handshake_hash: self.s_state.get_handshake_hash()?,
             })
         } else {

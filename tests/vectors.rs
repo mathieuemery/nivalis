@@ -13,8 +13,8 @@ use nivalis::{
     patterns::roles::{Initiator, Responder},
     patterns::*,
     state::{
-        cipher_state::CipherState,
         handshake_state::{HandshakeResult, HandshakeState},
+        transport_state::TransportState,
     },
     types::Psk,
 };
@@ -322,6 +322,19 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
     confirm_message_vectors::<P, D, C, H>(&mut init_hs, &mut resp_hs, vector)
 }
 
+fn check_handshake_hash(vector: &TestVector, hh: &[u8]) -> Result<(), String> {
+    if let Some(expected_hh) = &vector.handshake_hash
+        && hh != **expected_hh
+    {
+        return Err(format!(
+            "handshake_hash mismatch\n  expected: {}\n  actual:   {}",
+            hex::encode(&**expected_hh),
+            hex::encode(hh)
+        ));
+    }
+    Ok(())
+}
+
 fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
     init_hs: &mut HandshakeState<P, Initiator, D, C, H>,
     resp_hs: &mut HandshakeState<P, Responder, D, C, H>,
@@ -334,10 +347,8 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
     let mut wire = vec![0u8; 65535];
     let mut recv = vec![0u8; 65535];
 
-    let mut init_send: Option<CipherState<C>> = None;
-    let mut init_recv: Option<CipherState<C>> = None;
-    let mut resp_send: Option<CipherState<C>> = None;
-    let mut resp_recv: Option<CipherState<C>> = None;
+    let mut init_ts: Option<TransportState<C, D, Initiator>> = None;
+    let mut resp_ts: Option<TransportState<C, D, Responder>> = None;
 
     // Handshake phase
     #[allow(clippy::needless_range_loop)]
@@ -351,14 +362,13 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
                     .write_message(&message.payload, &mut wire, &mut rng)
                     .map_err(|e| format!("write_message failed on message {i}: {e:?}"))?;
 
-                let (len, send_ciphers) = match send_res {
+                let (len, send_complete) = match send_res {
                     HandshakeResult::Continue { bytes } => (bytes, None),
                     HandshakeResult::Complete {
                         bytes_written,
-                        initiator,
-                        responder,
+                        transport_state,
                         handshake_hash,
-                    } => (bytes_written, Some((initiator, responder, handshake_hash))),
+                    } => (bytes_written, Some((transport_state, handshake_hash))),
                 };
 
                 if wire[..len] != (*message.ciphertext)[..] {
@@ -377,79 +387,70 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
                     return Err(format!("message {i} payload mismatch on receive"));
                 }
 
-                let recv_ciphers = match recv_res {
+                let recv_complete = match recv_res {
                     HandshakeResult::Continue { .. } => None,
                     HandshakeResult::Complete {
-                        initiator,
-                        responder,
+                        transport_state,
                         handshake_hash,
                         ..
-                    } => Some((initiator, responder, handshake_hash)),
+                    } => Some((transport_state, handshake_hash)),
                 };
 
-                (send_ciphers, recv_ciphers)
+                (send_complete, recv_complete)
             }};
         }
 
-        let (send_ciphers, recv_ciphers) = if sender_is_init {
-            exchange!(init_hs, resp_hs)
-        } else {
-            exchange!(resp_hs, init_hs)
-        };
-
-        // Whichever side reports Complete, assign ciphers to the right owner.
-        if let Some((init_dir, resp_dir, hh)) = send_ciphers {
-            let (init_k, init_n) = init_dir.into_parts();
-            let (resp_k, resp_n) = resp_dir.into_parts();
-
-            init_send = Some(CipherState::from_parts(init_k.clone(), init_n));
-            resp_recv = Some(CipherState::from_parts(init_k, init_n));
-            resp_send = Some(CipherState::from_parts(resp_k.clone(), resp_n));
-            init_recv = Some(CipherState::from_parts(resp_k, resp_n));
-
-            if let Some(expected_hh) = &vector.handshake_hash {
-                if hh != **expected_hh {
-                    return Err(format!(
-                        "handshake_hash mismatch (sender)\n  expected: {}\n  actual:   {}",
-                        hex::encode(&**expected_hh),
-                        hex::encode(&hh)
-                    ));
-                }
+        if sender_is_init {
+            let (send_complete, recv_complete) = exchange!(init_hs, resp_hs);
+            if let Some((ts, hh)) = send_complete {
+                check_handshake_hash(vector, &hh)?;
+                init_ts = Some(ts);
             }
-        }
-        if let Some((_, _, hh)) = recv_ciphers {
-            if let Some(expected_hh) = &vector.handshake_hash {
-                if hh != **expected_hh {
-                    return Err(format!(
-                        "handshake_hash mismatch (receiver)\n  expected: {}\n  actual:   {}",
-                        hex::encode(&**expected_hh),
-                        hex::encode(&hh)
-                    ));
-                }
+            if let Some((ts, hh)) = recv_complete {
+                check_handshake_hash(vector, &hh)?;
+                resp_ts = Some(ts);
+            }
+        } else {
+            let (send_complete, recv_complete) = exchange!(resp_hs, init_hs);
+            if let Some((ts, hh)) = send_complete {
+                check_handshake_hash(vector, &hh)?;
+                resp_ts = Some(ts);
+            }
+            if let Some((ts, hh)) = recv_complete {
+                check_handshake_hash(vector, &hh)?;
+                init_ts = Some(ts);
             }
         }
     }
 
     // Transport phase
     let is_oneway = P::HANDSHAKE.is_oneway();
-    let (mut init_send, mut init_recv, mut resp_send, mut resp_recv) = (
-        init_send.ok_or_else(|| "handshake never completed (init_send missing)".to_string())?,
-        init_recv.ok_or_else(|| "handshake never completed (init_recv missing)".to_string())?,
-        resp_send.ok_or_else(|| "handshake never completed (resp_send missing)".to_string())?,
-        resp_recv.ok_or_else(|| "handshake never completed (resp_recv missing)".to_string())?,
-    );
+    let mut init_ts =
+        init_ts.ok_or_else(|| "handshake never completed (init_ts missing)".to_string())?;
+    let mut resp_ts =
+        resp_ts.ok_or_else(|| "handshake never completed (resp_ts missing)".to_string())?;
 
     for (i, message) in messages.iter().enumerate().skip(handshake_msg_count) {
-        let (send, recv_cs) = if is_oneway || i % 2 == 0 {
-            (&mut init_send, &mut resp_recv)
-        } else {
-            (&mut resp_send, &mut init_recv)
-        };
-
         let mut ct = vec![0u8; message.payload.len() + 32]; // headroom for auth tag
-        let ct_len = send
-            .encrypt_with_ad(b"", &message.payload, &mut ct)
-            .map_err(|e| format!("encrypt failed on message {i}: {e}"))?;
+        let mut recovered = vec![0u8; message.payload.len()];
+
+        let ct_len = if is_oneway || i % 2 == 0 {
+            let ct_len = init_ts
+                .encrypt_message(b"", &message.payload, &mut ct)
+                .map_err(|e| format!("encrypt failed on message {i}: {e}"))?;
+            resp_ts
+                .decrypt_message(b"", &ct[..ct_len], &mut recovered)
+                .map_err(|e| format!("decrypt failed on message {i}: {e}"))?;
+            ct_len
+        } else {
+            let ct_len = resp_ts
+                .encrypt_message(b"", &message.payload, &mut ct)
+                .map_err(|e| format!("encrypt failed on message {i}: {e}"))?;
+            init_ts
+                .decrypt_message(b"", &ct[..ct_len], &mut recovered)
+                .map_err(|e| format!("decrypt failed on message {i}: {e}"))?;
+            ct_len
+        };
 
         if ct[..ct_len] != (*message.ciphertext)[..] {
             return Err(format!(
@@ -458,11 +459,6 @@ fn confirm_message_vectors<P: Pattern, D: DH, C: Cipher, H: Hash>(
                 hex::encode(&ct[..ct_len])
             ));
         }
-
-        let mut recovered = vec![0u8; message.payload.len()];
-        recv_cs
-            .decrypt_with_ad(b"", &ct[..ct_len], &mut recovered)
-            .map_err(|e| format!("decrypt failed on message {i}: {e}"))?;
 
         if recovered != *message.payload {
             return Err(format!("message {i} payload mismatch on transport decrypt"));
