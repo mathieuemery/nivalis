@@ -9,6 +9,7 @@ use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 use crate::crypto::dh::{DH, DHKeypair};
 use crate::error::NoiseError;
 
+/// An X25519 keypair.
 pub struct X25519Keys {
     pub public: PublicKey,
     private: StaticSecret,
@@ -39,6 +40,10 @@ impl DHKeypair for X25519Keys {
     }
 }
 
+/// X25519 implementation of the Noise [`DH`] trait.
+/// 
+/// Based on the Montgomery curve Curve25519 as specified in
+/// [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748).
 pub struct X25519dh;
 
 impl DH for X25519dh {
@@ -58,6 +63,11 @@ impl DH for X25519dh {
         Ok(From::from(sk_bytes))
     }
 
+    /// Parses a public key from raw bytes.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::ConversionError`] if `bytes` is not exactly 32 bytes.
     fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey, NoiseError> {
         let arr: [u8; Self::DHLEN] = bytes
             .try_into()
@@ -77,6 +87,8 @@ impl DH for X25519dh {
         X25519Keys { public, private }
     }
 
+    /// Performs a X25519 DH to derive a shared secret between a private key
+    /// and a public key.
     fn dh(sk: &Self::PrivKey, pk: &Self::PubKey) -> Self::SharedSecret {
         sk.diffie_hellman(pk)
     }

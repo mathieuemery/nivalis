@@ -11,6 +11,12 @@ use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
 use crate::error::NoiseError;
 use crate::state::cipher_state::CipherState;
 
+/// The Noise `SymmetricState` object, stores the chaining key
+/// and the hash. Wraps a [`CipherState`] for encrypting/decrypting
+/// handshake messages.
+/// 
+/// Consumed via [`split`](Self::split) at the end of the handshake to
+/// produce the pair of `CipherState`s used for transport encryption.
 pub struct SymmetricState<C: Cipher, H: Hash> {
     c_state: CipherState<C>,
     ck: H::Output,
@@ -19,6 +25,12 @@ pub struct SymmetricState<C: Cipher, H: Hash> {
 }
 
 impl<C: Cipher, H: Hash> SymmetricState<C, H> {
+    /// Create a new `SymmetricState` from the canonical protocol name
+    /// string (ex: `Noise_XX_25519_AESGCM_SHA256`).
+    /// 
+    /// Sets both the chaining key `ck` and handshake hash `h` to
+    /// `protocol_name` padded to `HASHLEN` is short enough or hashed
+    /// otherwise.
     pub fn initialize_symmetric(protocol_name: &[u8]) -> Self {
         let h = if protocol_name.len() <= H::HASHLEN {
             H::pad(protocol_name)
@@ -36,6 +48,11 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         }
     }
 
+    /// Mixes new key material into the chaining key and re-initializes
+    /// the cipher state.
+    /// 
+    /// Called after each DH operation (`ee`, `es`, `se`, `ss`) during
+    /// the handshake.
     pub fn mix_key<D: DH>(&mut self, input_key_material: &[u8]) {
         let (ck, temp_k) = H::hkdf2(self.ck.as_ref(), input_key_material, D::DHLEN);
 
@@ -48,6 +65,10 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         self.c_state = CipherState::initialize_key(Some(&key));
     }
 
+    /// Mixes `data` into the handshake hash `h`.
+    /// 
+    /// Called for every public key and ciphertext exchanged
+    /// during the handshake.
     pub fn mix_hash(&mut self, data: &[u8]) {
         let mut result = Vec::with_capacity(H::HASHLEN + data.len());
         result.extend_from_slice(self.h.as_ref());
@@ -56,6 +77,10 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         self.h = H::hash(&result)
     }
 
+    /// Mixes `input_key_material` into both the chaining key and the
+    /// handshake hash and re-initializes the cipher state.
+    /// 
+    /// Used specifically for the `psk` token.
     pub fn mix_key_and_hash<D: DH>(&mut self, input_key_material: &[u8]) {
         let (ck, temp_h, temp_k) = H::hkdf3(self.ck.as_ref(), input_key_material, D::DHLEN);
 
@@ -68,6 +93,12 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         self.c_state = CipherState::initialize_key(Some(&key));
     }
 
+    /// Returns the final handshake hash once the state has been splitted.
+    /// 
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::InvalidState`] if called before
+    /// [`split`](Self::split).
     pub fn get_handshake_hash(&self) -> Result<Vec<u8>, NoiseError> {
         if !self.splitted {
             return Err(NoiseError::InvalidState(
@@ -78,7 +109,15 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         Ok(self.h.as_ref().to_vec())
     }
 
-    /// CT isn't returned as spec defines because it mutates an output buffer
+    /// Encrypts the `plaintext` with the handshake hash as associated
+    /// data, writes the result in `buf` and mixes the ciphertext into 
+    /// the handshake hash.
+    /// 
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::InvalidInput`] if the resulting
+    /// ciphertext would exceed [`MAX_MESSAGE_LEN`], or if the
+    /// underlying encryption fails.
     pub fn encrypt_and_hash(
         &mut self,
         plaintext: &[u8],
@@ -101,6 +140,14 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         Ok(len)
     }
 
+    /// Decrypts `ciphertext` with the handshake hash as associated
+    /// data, writes the plaintext into `buf` and mixes the ciphertext
+    /// into the handshake hash.
+    /// 
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::InvalidInput`] if `ciphertext` exceeds
+    /// [`MAX_MESSAGE_LEN`], or if decryption/authentication fails.
     pub fn decrypt_and_hash(
         &mut self,
         ciphertext: &[u8],
@@ -116,6 +163,8 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         Ok(())
     }
 
+    /// Split the `SymmetricState` into two `CipherState`s from the
+    /// final chaining key. Marks this `SymmetricState` as splitted.
     pub fn split<D: DH>(&mut self) -> (CipherState<C>, CipherState<C>) {
         let (temp_k1, temp_k2) = H::hkdf2(self.ck.as_ref(), &[], D::DHLEN);
 
@@ -133,6 +182,8 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
         )
     }
 
+    /// Returns `true` if the underlying cipher state's key
+    /// is set.
     pub fn has_key(&self) -> bool {
         self.c_state.has_key()
     }

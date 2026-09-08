@@ -31,18 +31,18 @@ const MAX_HANDSHAKE_MSG: usize = 256;
 /// Dummy PSK just for the example
 const PSK: [u8; 32] = [1u8; 32];
 
-fn build_initiator(init: &X25519Keys, resp: &X25519Keys) -> HsInit {
+fn build_initiator(init: X25519Keys, resp: &X25519Keys) -> HsInit {
     NewBuilder::<IKpsk2, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
-        .local_static_key(init.private().clone())
+        .local_static_key(init.private().to_owned())
         .remote_static_key(resp.public())
         .psk(PSK)
         .build()
         .expect("failed to build initiator handshake state")
 }
 
-fn build_responder(resp: &X25519Keys) -> HsResp {
+fn build_responder(resp: X25519Keys) -> HsResp {
     NewBuilder::<IKpsk2, Responder, X25519dh, ChaChaPoly, Blake2s>::new()
-        .local_static_key(resp.private().clone())
+        .local_static_key(resp.private().to_owned())
         .psk(PSK)
         .build()
         .expect("failed to build responder handshake state")
@@ -129,8 +129,8 @@ fn main() {
     let init_static = X25519dh::generate_keypair(&mut rng);
     let resp_static = X25519dh::generate_keypair(&mut rng);
 
-    let mut init_hs = build_initiator(&init_static, &resp_static);
-    let mut resp_hs = build_responder(&resp_static);
+    let mut init_hs = build_initiator(init_static, &resp_static);
+    let mut resp_hs = build_responder(resp_static);
 
     let (mut init_ts, mut resp_ts) =
         full_handshake(&mut init_hs, &mut resp_hs, rng);

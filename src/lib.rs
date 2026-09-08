@@ -19,18 +19,20 @@
 //!    crypto::{cipher::chacha20::ChaChaPoly, dh::{DH, DHKeypair, x25519::X25519dh}, hash::blake2s::Blake2s},
 //!    patterns::{IK, roles::{Initiator, Responder}},
 //!};
+//!use rand::rng;
 //!
-//!let init_static = X25519dh::generate_keypair();
-//!let resp_static = X25519dh::generate_keypair();
+//!let mut rng = rng();
+//!let init_static = X25519dh::generate_keypair(&mut rng);
+//!let resp_static = X25519dh::generate_keypair(&mut rng);
 //!
 //!let initiator = NewBuilder::<IK, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
-//!        .local_static_key(init_static.private().clone())
+//!        .local_static_key(init_static.private().to_owned())
 //!        .remote_static_key(resp_static.public())
 //!        .build()
 //!        .expect("failed to build initiator handshake state");
 //!
 //!let responder = NewBuilder::<IK, Responder, X25519dh, ChaChaPoly, Blake2s>::new()
-//!        .local_static_key(resp_static.private().clone())
+//!        .local_static_key(resp_static.private().to_owned())
 //!        .build()
 //!        .expect("failed to build responder handshake state");
 //! // ...

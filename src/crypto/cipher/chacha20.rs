@@ -4,16 +4,25 @@ use aes_gcm::AeadInOut;
 use aes_gcm::aead::Error;
 use chacha20poly1305::{ChaCha20Poly1305, Tag};
 use hmac::KeyInit;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::constants::{ENCRYPTION_KEY_LEN, TAG_LEN};
 use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 
+/// Cipher state for [`ChaChaPoly`], stores the current 
+/// encryption key (if any).
+/// 
+/// A `None` key is a valid state as the key isn't
+/// always initialized.
 #[derive(Copy, Clone, Debug)]
 pub struct ChaChaPolyState {
     key: Option<[u8; 32]>,
 }
 
+/// ChaCha20-Poly1305 implementation of the Noise [`Cipher`] trait.
+/// 
+/// Uses a 96-bit nonce and a 128-bit tag as
+/// specified by [RFC 8439](https://www.rfc-editor.org/info/rfc8439/)
 pub struct ChaChaPoly;
 
 impl Cipher for ChaChaPoly {
@@ -26,6 +35,10 @@ impl Cipher for ChaChaPoly {
 }
 
 impl InternalCipherState for ChaChaPolyState {
+    /// Converts a Noise 64-bit nonce counter into the 12-byte nonce
+    /// expected by ChaCha20-Poly1305.
+    /// 
+    /// This is 4 zero-bytes followed by the little-endian encoding of `n`.
     fn convert_nonce(n: u64) -> Nonce {
         let mut nonce: Nonce = [0u8; NONCE_LEN];
         nonce[4..NONCE_LEN].copy_from_slice(&n.to_le_bytes());
@@ -46,6 +59,11 @@ impl InternalCipherState for ChaChaPolyState {
         //println!("Encrypting with n = {n} and key = {:?}", self.key);
         if let Some(key) = &self.key {
             debug!("Nonce when encrypting: {}", n);
+
+            if buf.len() < pt_buf.len() + TAG_LEN {
+                warn!("Provided output buffer is too small for encryption.");
+                return Err(Error);
+            }
 
             let cipher = ChaCha20Poly1305::new(key.into());
 
@@ -71,6 +89,11 @@ impl InternalCipherState for ChaChaPolyState {
     fn decrypt(&self, n: u64, ad: &[u8], ct_buf: &[u8], buf: &mut [u8]) -> Result<(), Error> {
         if let Some(key) = &self.key {
             debug!("Nonce when decrypting: {}", n);
+
+            if buf.len() < ct_buf.len() - TAG_LEN {
+                warn!("Provided output buffer is too small for encryption.");
+                return Err(Error);
+            }
 
             let cipher = ChaCha20Poly1305::new(key.into());
 

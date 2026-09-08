@@ -7,6 +7,9 @@ use crate::crypto::hash::Hash;
 
 type HmacSha256 = Hmac<LibSha256>;
 
+/// SHA-256 implementation of the Noise [`Hash`] trait.
+/// 
+/// As specified in [FIPS 180-4](https://csrc.nist.gov/publications/detail/fips/180/4/final).
 pub struct Sha256;
 
 impl Hash for Sha256 {
@@ -16,6 +19,9 @@ impl Hash for Sha256 {
 
     type Output = [u8; Self::HASHLEN];
 
+    /// # Panics
+    ///
+    /// Panics if `data.len() > HASHLEN` (64 bytes).
     fn pad(data: &[u8]) -> Self::Output {
         assert!(data.len() <= Self::HASHLEN);
 

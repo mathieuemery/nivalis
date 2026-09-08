@@ -7,6 +7,9 @@ use crate::crypto::hash::Hash;
 
 type HmacSha512 = Hmac<LibSha512>;
 
+/// SHA-512 implementation of the Noise [`Hash`] trait.
+/// 
+/// As specified in [FIPS 180-4](https://csrc.nist.gov/publications/detail/fips/180/4/final)
 pub struct Sha512;
 
 impl Hash for Sha512 {
@@ -16,6 +19,9 @@ impl Hash for Sha512 {
 
     type Output = [u8; Self::HASHLEN];
 
+    /// # Panics
+    ///
+    /// Panics if `data.len() > HASHLEN` (64 bytes).
     fn pad(data: &[u8]) -> Self::Output {
         assert!(data.len() <= Self::HASHLEN);
 

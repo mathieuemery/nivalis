@@ -33,7 +33,7 @@ use crate::types::Psk;
 /// 
 /// # Type parameters
 /// - `P`: the Noise pattern (ex: `NN`, `XX`, `IKpsk2`) which determines which
-/// keys are required before calling `.build()`.
+///   keys are required before calling `.build()`.
 /// - `R`: the role in the handshake ([`Initiator`] or [`Responder`]).
 /// - `D`: the DH function (ex: X25519)
 /// - `C`: the AEAD cipher (ex: ChaCha20-Poly1305)
@@ -41,15 +41,7 @@ use crate::types::Psk;
 /// 
 /// # Const generic parameters
 /// - `LS`, `RS`, `LE`, `RE`, `PSK`: whether the local/remote static/ephemeral
-/// or PSK keys have been provided.
-/// 
-/// # Example
-/// ```rust
-/// let initiator = NewBuilder::<IK, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
-///     .local_static_key(init_static.private().clone()
-///     .remote_static_key(resp_static.public())
-///     .build()?;
-/// ```
+///   or PSK keys have been provided.
 pub struct HandshakeParamsBuilder<
     P,
     R,

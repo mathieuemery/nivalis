@@ -1,4 +1,5 @@
 //! HandshakeState of the noise handshake
+//! 
 //! https://noiseprotocol.org/noise.html#the-handshakestate-object
 
 extern crate alloc;
@@ -20,37 +21,66 @@ use crate::patterns::{Pattern, Token, roles::RoleMarker};
 use crate::state::symmetric_state::SymmetricState;
 use crate::types::Psk;
 
+/// The outcome of a single [`HandshakeState::write_message`] or
+/// [`HandshakeState::read_message`] call.
 pub enum HandshakeResult<C: Cipher, D: DH, R: RoleMarker> {
+    /// The handshake message was processed successfully but the
+    /// handshake isn't finished yet.
     Continue {
+        /// The number of bytes written to (or consumed from) the message
+        /// buffer for this step.
         bytes: usize,
     },
+    /// The final handshake message was processed, the handshake is finished
+    /// and transport encryption can begin.
     Complete {
+        /// The number of bytes written to (or consumed from) the message
+        /// buffer for the final step.
         bytes_written: usize,
+        /// The resulting [`TransportState`] used to encrypt/decrypt
+        /// application data after the handshake.
         transport_state: TransportState<C, D, R>,
+        /// The final hash of the handshake (`h`).
         handshake_hash: Vec<u8>,
     },
 }
 
+/// The key material given by the user for the handshake.
+///
+/// Which fields are required depends on the chosen
+/// [`Pattern`]/[`RoleMarker`].
 pub struct HandshakeKeys<D: DH> {
+    /// The local static keypair.
     pub s: Option<D::Keypair>,
+    /// The local ephemeral keypair.
     pub e: Option<D::Keypair>,
+    /// The remote static public key.
     pub rs: Option<D::PubKey>,
+    /// The remote ephemeral public key.
     pub re: Option<D::PubKey>,
+    /// The pre-shared key.
     pub psk: Option<Psk>,
 }
 
+/// Computes `buf_index + len`, checking for both integer overflow and
+/// the Noise spec's maximum message length ([`MAX_MESSAGE_LEN`]).
 fn checked_message_end(buf_index: usize, len: usize) -> Result<usize, NoiseError> {
     let end = buf_index
         .checked_add(len)
         .ok_or(NoiseError::InvalidInput("Noise message length overflow"))?;
 
     if end > MAX_MESSAGE_LEN {
-        return Err(NoiseError::InvalidInput("Noise message is too large.)"))
+        return Err(NoiseError::InvalidInput("Noise message is too large."))
     }
 
     Ok(end)
 }
 
+/// The Noise `HandshakeState` object, drives the handshake message sequence
+/// for a given [`Pattern`], [`RoleMarker`], DH function, cipher and hash.
+/// 
+/// Created via [`HandshakeState::initialize`] generally called by
+/// [`HandshakeParamsBuilder::build()`].
 pub struct HandshakeState<P: Pattern, R: RoleMarker, D: DH, C: Cipher, H: Hash> {
     s_state: SymmetricState<C, H>,
     keys: HandshakeKeys<D>,
@@ -60,6 +90,12 @@ pub struct HandshakeState<P: Pattern, R: RoleMarker, D: DH, C: Cipher, H: Hash> 
 }
 
 impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, D, C, H> {
+    /// Mixes the local party's own pre-message keys into the handshake.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::MissingRequirements`] if a pre-message
+    /// token requires a key that wasn't supplied.
     fn mix_pre_messages_init(
         state: &mut SymmetricState<C, H>,
         tokens: &[Token],
@@ -86,6 +122,12 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
+    /// Mixes the peer's pre-message keys into the handshake.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::MissingRequirements`] if a pre-message
+    /// token requires a key that wasn't supplied.
     fn mix_pre_messages_remote(
         state: &mut SymmetricState<C, H>,
         tokens: &[Token],
@@ -96,12 +138,12 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
             match token {
                 Token::S => {
                     let s =
-                        rs.ok_or(NoiseError::MissingRequirements(MissingKey::LocalStatic))?;
+                        rs.ok_or(NoiseError::MissingRequirements(MissingKey::RemoteStatic))?;
                     state.mix_hash(&D::pubkey_bytes(s));
                 }
                 Token::E => {
                     let e = re.ok_or({
-                        NoiseError::MissingRequirements(MissingKey::LocalEphemeral)
+                        NoiseError::MissingRequirements(MissingKey::RemoteEphemeral)
                     })?;
                     state.mix_hash(&D::pubkey_bytes(e));
                 }
@@ -112,12 +154,23 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
-    /// Create a string with expected string structure
-    /// ex: Noise_XX_25519_AESGCM_SHA256
+    /// Creates the canonical Noise protocol name sting,
+    /// ex: `Noise_XX_25519_AESGCM_SHA256`. Used to initialize the
+    /// symmetric state.
     fn canonical_name() -> String {
         format!("Noise_{}_{}_{}_{}", P::NAME, D::NAME, C::NAME, H::NAME)
     }
 
+    /// Creates a new `HandshakeState` from a given `prologue` and `keys`.
+    /// 
+    /// This is normally called via
+    /// [`HandshakeParamsBuilder::build`](crate::builder::HandshakeParamsBuilder::build)
+    /// rather than directly.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::MissingRequirements`] if `keys` is missing
+    /// a key required by `P`'s pre-messages for either role.
     pub fn initialize(prologue: &[u8], keys: HandshakeKeys<D>) -> Result<Self, NoiseError> {
         let protocol_name = Self::canonical_name();
 
@@ -165,6 +218,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         })
     }
 
+    /// Performs the `ee` DH token: mixes `DH(local_ephemeral,
+    /// remote_ephemeral)` into the symmetric state's chaining key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::MissingRequirements`] if either ephemeral
+    /// key is missing.
     fn mix_ee(&mut self) -> Result<(), NoiseError> {
         let e = self
             .keys
@@ -182,6 +242,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
+    /// Performs the `es` DH token depending on who is executing, then mix the result
+    /// into the symmetric state's chaining key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::MissingRequirements`] if the required
+    /// local or remote key is missing.
     fn mix_es(&mut self) -> Result<(), NoiseError> {
         let dh_res =
             if R::IS_INITIATOR {
@@ -214,6 +281,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
+    /// Performs the `se` DH token depending on who is executing, then mix the result
+    /// into the symmetric state's chaining key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::MissingRequirements`] if the required
+    /// local or remote key is missing.
     fn mix_se(&mut self) -> Result<(), NoiseError> {
         let dh_res =
             if R::IS_INITIATOR {
@@ -246,6 +320,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
+    /// Performs the `ss` DH token: mixes `DH(local_static,
+    /// remote_static)` into the symmetric state's chaining key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::MissingRequirements`] if either static key
+    /// is missing.
     fn mix_ss(&mut self) -> Result<(), NoiseError> {
         let s = self
             .keys
@@ -262,7 +343,13 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
-    /// Todo: Remove expect
+    /// Performs the `psk` token: mixes the pre-shared key into both
+    /// the chaining key and the handshake hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::MissingRequirements`] if no PSK was
+    /// supplied.
     fn mix_psk(&mut self) -> Result<(), NoiseError> {
         let psk = self
             .keys
@@ -274,6 +361,23 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         Ok(())
     }
 
+    /// Writes the next handshake message into `message_buffer`,
+    /// encrypting `payload` as the message's payload.
+    /// 
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::HandshakeFinished`] if all messages for
+    /// this pattern have already been written,
+    /// [`NoiseError::MissingRequirements`] if a required key is
+    /// missing, [`NoiseError::InvalidState`] if `self.e` is unexpectedly
+    /// already set or `message_buffer` is too small, or
+    /// [`NoiseError::InvalidInput`] if the resulting message would
+    /// exceed [`MAX_MESSAGE_LEN`].
+    /// 
+    /// # Returns
+    /// 
+    /// [`HandshakeResult::Continue`] if more messages remain, or
+    /// [`HandshakeResult::Complete`]
     pub fn write_message<Rng: Random + CryptoRng>(
         &mut self,
         payload: &[u8],
@@ -406,6 +510,21 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         }
     }
 
+    /// Reads and processes the next handshake message from `message`,
+    /// decrypting its payload into `payload_buffer`.
+    /// 
+    /// # Errors
+    ///
+    /// Returns [`NoiseError::InvalidInput`] if `message` exceeds
+    /// [`MAX_MESSAGE_LEN`], [`NoiseError::HandshakeFinished`] if all
+    /// messages have already been read, or
+    /// [`NoiseError::InvalidState`]/decryption errors if `message` is
+    /// malformed, truncated, or fails authentication.
+    ///
+    /// # Returns
+    ///
+    /// [`HandshakeResult::Continue`] if more messages remain, or
+    /// [`HandshakeResult::Complete`]
     pub fn read_message(
         &mut self,
         message: &[u8],

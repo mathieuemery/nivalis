@@ -28,16 +28,16 @@ type TsResp = TransportState<ChaChaPoly, X25519dh, Responder>;
 
 const MAX_HANDSHAKE_MSG: usize = 256;
 
-fn build_initiator(init: &X25519Keys) -> HsInit {
+fn build_initiator(init: X25519Keys) -> HsInit {
     NewBuilder::<XX, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
-        .local_static_key(init.private().clone())
+        .local_static_key(init.private().to_owned())
         .build()
         .expect("failed to build initiator handshake state")
 }
 
-fn build_responder(resp: &X25519Keys) -> HsResp {
+fn build_responder(resp: X25519Keys) -> HsResp {
     NewBuilder::<XX, Responder, X25519dh, ChaChaPoly, Blake2s>::new()
-        .local_static_key(resp.private().clone())
+        .local_static_key(resp.private().to_owned())
         .build()
         .expect("failed to build responder handshake state")
 }
@@ -141,8 +141,8 @@ fn main() {
     let init_static = X25519dh::generate_keypair(&mut rng);
     let resp_static = X25519dh::generate_keypair(&mut rng);
 
-    let mut init_hs = build_initiator(&init_static);
-    let mut resp_hs = build_responder(&resp_static);
+    let mut init_hs = build_initiator(init_static);
+    let mut resp_hs = build_responder(resp_static);
 
     let (mut init_ts, mut resp_ts) =
         full_handshake(&mut init_hs, &mut resp_hs, rng);
