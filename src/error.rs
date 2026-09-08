@@ -2,12 +2,25 @@
 
 use core::fmt;
 
+/// Used when a key that is required by the pattern
+/// wasn't provided to the builder.
+/// 
+/// Also depends on the role of the of the caller
+/// (initiator or responder).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingKey {
+    /// The local static key isn't set but the pattern requires one.
     LocalStatic,
+    /// The remote static key isn't set, it is a pre-message required
+    /// by this pattern.
     RemoteStatic,
+    /// The local ephemeral key isn't set but the pattern requires one (rare).
     LocalEphemeral,
+    /// The remote ephemeral key isn't set, it is a pre-message required
+    /// by this pattern.
     RemoteEphemeral,
+    /// This pattern requires a Pre-Shared Key that wasn't provided to
+    /// the builder.
     Psk,
 }
 
@@ -32,15 +45,28 @@ impl fmt::Display for MissingKey {
     }
 }
 
+/// The error types used by nivalis for the handshake and transport.
+/// 
+/// Implements [`core::error::Error`] and [`fmt::Display`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoiseError {
+    /// Not all required keys where provided to the builder, see [`MissingKey`].
     MissingRequirements(MissingKey),
+    /// A byte slice or value couldn't be converted to the expected type.
     ConversionError(&'static str),
+    /// The user tried to send handshake messages after the handshake finished.
     HandshakeFinished,
+    /// The input provided by the client is truncated or doesn't have
+    /// the expected structure.
     InvalidInput(&'static str),
+    /// The operation isn't valid for the current state.
     InvalidState(&'static str),
+    /// Used in the tests when the required pattern/ciphersuite isn't supported.
     Unsupported(&'static str),
+    /// The nonce counter has reached its maximum value (2^64 - 1) and
+    /// cannot be incremented anymore.
     MaxNValue,
+    /// Error happened during rekey. Ex: rekeying a key that isn't set yet.
     Rekey(&'static str),
 }
 

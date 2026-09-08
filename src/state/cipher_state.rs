@@ -1,4 +1,5 @@
-//! CipherState object of the Noise Handshake
+//! CipherState of the Noise Handshake
+//! 
 //! https://noiseprotocol.org/noise.html#the-cipherstate-object
 
 use crate::crypto::cipher::{Cipher, InternalCipherState};
@@ -6,6 +7,9 @@ use crate::error::NoiseError;
 
 const MAX_N_VALUE: u64 = u64::MAX;
 
+/// The Noise `CipherState` object, stores a cipher key
+/// and a nonce counter to perform authenticated encryption/decryption
+/// during and after the handshake.
 #[derive(Debug)]
 pub struct CipherState<C: Cipher> {
     k: Option<C::State>,
@@ -13,6 +17,7 @@ pub struct CipherState<C: Cipher> {
 }
 
 impl<C: Cipher> CipherState<C> {
+    /// Initializes a `CipherState` with an optional 256-bit key.
     pub fn initialize_key(key: Option<&[u8; 32]>) -> Self {
         Self {
             k: key.map(|k| C::init(k)),
@@ -20,14 +25,29 @@ impl<C: Cipher> CipherState<C> {
         }
     }
 
+    /// Returns `true` if the key has been set.
     pub fn has_key(&self) -> bool {
         self.k.is_some()
     }
 
-    pub fn set_nonce(mut self, nonce: u64) {
+    /// Sets the nonce counter to `nonce`
+    pub fn set_nonce(&mut self, nonce: u64) {
         self.n = nonce
     }
 
+    /// Encrypts `pt_buf` with associated data `ad`, writes
+    /// the ciphertext into `buf` and returns the number of bytes
+    /// written.
+    /// 
+    /// If no key is set, no encryption is done, `pt_buf` is
+    /// copied into `buf` and the nonce isn't incremented.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::MaxNValue`] if the nonce counter has
+    /// reached its maximum value and cannot be incremented anymore, or
+    /// [`NoiseError::InvalidInput`] if the cipher fails to encrypt
+    /// (ex: `buf` is too small).
     pub fn encrypt_with_ad(
         &mut self,
         ad: &[u8],
@@ -51,6 +71,16 @@ impl<C: Cipher> CipherState<C> {
         Ok(size)
     }
 
+    /// Authenticate and decrypt `ct_buf` with associated data `ad` and
+    /// writes the plaintext in `buf`.
+    /// 
+    /// If no key is set, `ct_buf` is copied into `buf` unmodified and
+    /// the nonce is not incremented.
+    /// 
+    /// Returns [`NoiseError::MaxNValue`] if the nonce counter has
+    /// reached its maximum value and cannot be incremented anymore, or
+    /// [`NoiseError::InvalidInput`] if the cipher fails to decrypt
+    /// (ex: tampered ciphertext).
     pub fn decrypt_with_ad(
         &mut self,
         ad: &[u8],
@@ -71,9 +101,16 @@ impl<C: Cipher> CipherState<C> {
         Ok(())
     }
 
-    pub fn rekey(mut self) -> Result<(), NoiseError> {
+    /// Rotates the cipher key.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::Rekey`] if no key is currently set, or
+    /// [`NoiseError::InvalidInput`] if the underlying rekey operation
+    /// fails.
+    pub fn rekey(&mut self) -> Result<(), NoiseError> {
         if let Some(c) = &mut self.k {
-            c.rekey().map_err(|_| NoiseError::MaxNValue)?
+            c.rekey().map_err(|_| NoiseError::InvalidInput("Couldn't do the rekey"))?
         } else {
             return Err(NoiseError::Rekey("Cannot rekey a k that isn't set."));
         }
@@ -81,10 +118,16 @@ impl<C: Cipher> CipherState<C> {
         Ok(())
     }
 
+    /// Reconstructs a `CipherState` from a given key and nonce.
+    /// 
+    /// Primarily used for tests.
     pub fn from_parts(k: Option<C::State>, n: u64) -> Self {
         Self { k, n }
     }
 
+    /// Decomposes this `CipherState` into its raw key and nonce parts.
+    /// 
+    /// The inverse of [`from_parts`](Self::from_parts)
     pub fn into_parts(self) -> (Option<C::State>, u64) {
         (self.k, self.n)
     }

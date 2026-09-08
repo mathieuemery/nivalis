@@ -8,20 +8,47 @@ pub mod blake2s;
 pub mod sha256;
 pub mod sha512;
 
+/// A Noise `HASH` function.
+/// 
+/// See [`blake2b`], [`blake2s`], [`sha256`] and [`sha512`]
+/// for the four hash functions provided by this crate.
 pub trait Hash {
+    /// The length in bytes of this hash function's output
+    /// (ex: 32 for SHA-256, 64 for SHA-512).
     const HASHLEN: usize;
+    /// The internal block length in bytes of this hash function.
+    /// Used for HMAC padding.
     const BLOCKLEN: usize;
+    /// The Noise protocol name for this hash function. Used when
+    /// building the handshake's protocol name string.
     const NAME: &'static str;
 
+    /// The output type of this hash function.
     type Output: Copy + AsRef<[u8]>;
 
-    /// Doesn't create a hash
+    /// Pads `data` to a multiple of [`HASHLEN`](Self::HASHLEN).
+    /// 
+    /// This does not compute a hash digest, it only produces a padded block.
     fn pad(data: &[u8]) -> Self::Output;
 
+    /// Computes the hash digest of `data
     fn hash(data: &[u8]) -> Self::Output;
 
+    /// Computes `HMAC-HASH(key, data)` as defined in
+    /// [RFC 2104](https://www.rfc-editor.org/rfc/rfc2104), using this
+    /// hash function.
     fn hmac_hash(key: &[u8], data: &[u8]) -> Self::Output;
 
+    /// Computes `HKDF(chaining_key, input_key_material, num_outputs)`
+    /// as defined in Noise spec section 4.3 / [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869).
+    /// 
+    /// Most callers should use [`hkdf2`](Self::hkdf2) or [`hkdf3`](Self::hkdf3) which
+    /// will then call this method to get the outputs.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if `chaining_key.len() != HASHLEN`, or if `ikm.len()` is
+    /// not one of `0`, `32`, or `dh_len` as defined in the Noise protocol.
     fn hkdf(
         chaining_key: &[u8],
         ikm: &[u8],
@@ -64,6 +91,11 @@ pub trait Hash {
         result
     }
 
+    /// Wrapper around [`hkdf`](Self::hkdf) that returns exactly two outputs.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics under the same conditions as [`hkdf`](Self::hkdf).
     fn hkdf2(chaining_key: &[u8], ikm: &[u8], dh_len: usize) -> (Self::Output, Self::Output) {
         let mut keys = Self::hkdf(chaining_key, ikm, dh_len, 2);
 
@@ -71,6 +103,12 @@ pub trait Hash {
         (keys.remove(0), keys.remove(0))
     }
 
+    /// Wrapper around [`hkdf`](Self::hkdf) that returns exactly two outputs.
+    /// Used when mixing in a pre-shared key.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics under the same conditions as [`hkdf`](Self::hkdf).
     fn hkdf3(
         chaining_key: &[u8],
         ikm: &[u8],

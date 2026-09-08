@@ -15,6 +15,33 @@ use crate::patterns::roles::*;
 use crate::state::handshake_state::{HandshakeKeys, HandshakeState};
 use crate::types::Psk;
 
+/// A compile-time checked builder for assembling the keys and parameters
+/// needed to start a Noise handshake.
+/// 
+/// Uses const generic flags (`LS`, `RS`, `LE`, `RE`, `PSK`) to track
+/// which keys have been provided.
+/// 
+/// Each call to the `.local_static_key(...)`, `.remote_static_key(...)`, etc.
+/// setters consume `self` and returns a builder with the corresponding flags
+/// flipped to `true`.
+/// 
+/// Makes it impossible for the user to call `.build()` twice or forget a key
+/// required by the chosen pattern.
+/// 
+/// Uses const `assert!` in the the `.build()` method to block the compilation
+/// of an invalid state and provide a proper error message.
+/// 
+/// # Type parameters
+/// - `P`: the Noise pattern (ex: `NN`, `XX`, `IKpsk2`) which determines which
+///   keys are required before calling `.build()`.
+/// - `R`: the role in the handshake ([`Initiator`] or [`Responder`]).
+/// - `D`: the DH function (ex: X25519)
+/// - `C`: the AEAD cipher (ex: ChaCha20-Poly1305)
+/// - `H`: the hash function (ex: BLAKE2s)
+/// 
+/// # Const generic parameters
+/// - `LS`, `RS`, `LE`, `RE`, `PSK`: whether the local/remote static/ephemeral
+///   or PSK keys have been provided.
 pub struct HandshakeParamsBuilder<
     P,
     R,
@@ -42,6 +69,7 @@ pub struct HandshakeParamsBuilder<
     _marker: PhantomData<(P, R, C, H)>,
 }
 
+/// A newly created [`HandshakeParamsBuilder`] with no keys set yet.
 pub type NewBuilder<P, R, D, C, H> =
     HandshakeParamsBuilder<P, R, D, C, H, false, false, false, false, false>;
 
@@ -53,6 +81,11 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Creates a new empty handshake builder with no keys or prologue yet.
+    /// 
+    /// Use the `.local_static_key(...)`, `.remote_static_key(...)`,
+    /// `.psk(...)`, etc. later to provide the required keys and then call
+    /// `.build()` to get a [`HandshakeState`]
     pub fn new() -> Self {
         HandshakeParamsBuilder {
             local_static: None,
@@ -65,7 +98,16 @@ where
         }
     }
 
-    /// To be used for integration tests
+    /// Builds a [`HandshakeState`] directly from key material,
+    /// bypasses the typestate builder.
+    /// 
+    /// This exists primarily for integration tests where keys
+    /// are assembled dynamically from test vectors. Prefer the typestate
+    /// builder (`NewBuilder::new`) in normal application code.
+    /// 
+    /// # Errors
+    /// Returns [`NoiseError::MissingRequirements`] if a key required by
+    /// the pattern wasn't provided
     pub fn from_parts(
         local_static: Option<D::PrivKey>,
         remote_static: Option<D::PubKey>,
@@ -134,6 +176,10 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the local static private key and derive the corresponding keypair.
+    /// 
+    /// Only available when the local static key hasn't been provided yet
+    /// (`LS = false`). Calling this multiple times creates a compilation error.
     pub fn local_static_key(
         self,
         sk: D::PrivKey,
@@ -160,6 +206,10 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the remote party's static public key.
+    /// 
+    /// Required by patterns where the remote's static key is known in advance
+    /// (ex: `IK`, `XK`). Only available when not set (`RS = true`).
     pub fn remote_static_key(
         self,
         pk: D::PubKey,
@@ -185,6 +235,10 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the local ephermeral private key and derive the corresponding keypair.
+    /// 
+    /// Normally never used outside of tests as the ephemeral key is created during
+    /// the handshake. Only available when not set (`LE = false`)
     pub fn local_ephemeral_key(
         self,
         sk: D::PrivKey,
@@ -211,6 +265,10 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the remote's ephemeral public key.
+    /// 
+    /// Required as a pre-message on patterns/role where the peer's ephemeral key
+    /// is known in advance (see Section 7). Only available when not set (`RE = false`)
     pub fn remote_ephemeral_key(
         self,
         pk: D::PubKey,
@@ -236,6 +294,10 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the Pre-Shared Key that will be mixed in the handshake.
+    /// 
+    /// You don't define the position of the PSK here, it will automatically be used
+    /// where the pattern defines it. Only available when not set (`PSK = false`)
     pub fn psk(self, psk: [u8; 32]) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, LE, RE, true> {
         HandshakeParamsBuilder {
             local_static: self.local_static,
@@ -258,11 +320,21 @@ where
     C: Cipher,
     H: Hash,
 {
+    /// Sets the optional prologue data mixed into the handshake hash.
+    /// 
+    /// The prologue can be used by any pattern and both parties must agree on it
+    /// beforehand. Defaults to empty if not set.
     pub fn prologue(mut self, prologue: Vec<u8>) -> Self {
         self.prologue = prologue;
         self
     }
 
+    /// Validates the builder's state and initializes a [`HandshakeState`].
+    /// 
+    /// # Errors
+    /// 
+    /// Returns a [`NoiseError`] if handshake initialization fails or
+    /// if required keys where not provided.
     pub fn build(self) -> Result<HandshakeState<P, R, D, C, H>, NoiseError> {
         const {
             assert!(

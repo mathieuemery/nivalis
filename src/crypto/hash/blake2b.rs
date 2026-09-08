@@ -7,6 +7,10 @@ use crate::crypto::hash::Hash;
 
 type HmacBlake2b = SimpleHmac<Blake2b512>;
 
+/// BLAKE2b implementation of the Noise [`Hash`] trait.
+/// 
+/// Uses BLAKE2b-512 as specified in
+/// [RFC 7693](https://www.rfc-editor.org/rfc/rfc7693).
 pub struct Blake2b;
 
 impl Hash for Blake2b {
@@ -16,6 +20,9 @@ impl Hash for Blake2b {
 
     type Output = [u8; Self::HASHLEN];
 
+    /// # Panics
+    ///
+    /// Panics if `data.len() > HASHLEN` (64 bytes).
     fn pad(data: &[u8]) -> Self::Output {
         assert!(data.len() <= Self::HASHLEN);
 

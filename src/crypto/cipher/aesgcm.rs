@@ -4,16 +4,26 @@ use aes_gcm::{
     AeadInOut, Aes256Gcm, KeyInit,
     aead::{Error, Tag},
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::constants::{ENCRYPTION_KEY_LEN, TAG_LEN};
 use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 
+
+/// Cipher state for [`AesGcm`], stores the current 
+/// encryption key (if any).
+/// 
+/// A `None` key is a valid state as the key isn't
+/// always initialized.
 #[derive(Copy, Clone, Debug)]
 pub struct AesGcmState {
     key: Option<[u8; 32]>,
 }
 
+/// AES-256-GCM implementation of the Noise [`Cipher`] trait.
+/// 
+/// Uses a 96-bit nonce and a 128-bit tag as
+/// specified by [NIST SP 800-38D](https://csrc.nist.gov/publications/detail/sp/800-38d/final)
 pub struct AesGcm;
 
 impl Cipher for AesGcm {
@@ -26,6 +36,10 @@ impl Cipher for AesGcm {
 }
 
 impl InternalCipherState for AesGcmState {
+    /// Converts a Noise 64-bit nonce counter into the 12-byte nonce
+    /// expected by AES-GCM.
+    /// 
+    /// This is 4 zero-bytes followed by the big-endian encoding of `n`.
     fn convert_nonce(n: u64) -> Nonce {
         let mut nonce: Nonce = [0u8; NONCE_LEN];
         nonce[4..NONCE_LEN].copy_from_slice(&n.to_be_bytes());
@@ -45,6 +59,11 @@ impl InternalCipherState for AesGcmState {
         let mut output_len = pt_buf.len();
         if let Some(key) = &self.key {
             debug!("Nonce when encrypting: {}", n);
+
+            if buf.len() < pt_buf.len() + TAG_LEN {
+                warn!("Provided output buffer is too small for encryption.");
+                return Err(Error);
+            }
 
             let cipher = Aes256Gcm::new(key.into());
 
@@ -70,6 +89,11 @@ impl InternalCipherState for AesGcmState {
     fn decrypt(&self, n: u64, ad: &[u8], ct_buf: &[u8], buf: &mut [u8]) -> Result<(), Error> {
         if let Some(key) = &self.key {
             debug!("Nonce when decrypting: {}", n);
+
+            if buf.len() < ct_buf.len() - TAG_LEN {
+                warn!("Provided output buffer is too small for encryption.");
+                return Err(Error);
+            }
 
             let cipher = Aes256Gcm::new(key.into());
 

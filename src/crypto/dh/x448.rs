@@ -10,6 +10,7 @@ use cx448::{MontgomeryPoint, Scalar, WideScalarBytes, x448::x448};
 use crate::crypto::dh::{DH, DHKeypair};
 use crate::error::NoiseError;
 
+/// An X448 keypair.
 pub struct X448Keys {
     pub public: MontgomeryPoint,
     private: Scalar,
@@ -31,6 +32,13 @@ impl DHKeypair for X448Keys {
         self.public.as_bytes().to_vec()
     }
 
+    /// Derive a keypair by multiplying the scalar `sk` with the
+    /// standard x448 base point.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the X448 multiplication fails. Shouldn't happen as the error
+    /// is thrown if `point_bytes` is malformed.
     fn derive_keypair(sk: &Self::PrivKey) -> Self {
         let pk = x448(sk.to_bytes(), MontgomeryPoint::GENERATOR.0).expect("Couldn't derive the pk");
         Self {
@@ -40,6 +48,11 @@ impl DHKeypair for X448Keys {
     }
 }
 
+
+/// X448 implementation of the Noise [`DH`] trait.
+/// 
+/// Based on the Montgomery curve Curve448 as specified in
+/// [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748).
 pub struct X448dh;
 
 impl DH for X448dh {
@@ -59,6 +72,11 @@ impl DH for X448dh {
         Ok(Scalar::from_bytes(&sk_bytes))
     }
 
+    /// Parses a public key from raw bytes.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns [`NoiseError::ConversionError`] if `bytes` is not exactly 56 bytes.
     fn pubkey_from_bytes(bytes: &[u8]) -> Result<Self::PubKey, NoiseError> {
         let arr: [u8; Self::DHLEN] = bytes
             .try_into()
@@ -82,6 +100,12 @@ impl DH for X448dh {
         X448Keys { public, private }
     }
 
+    /// Performs a X448 DH to derive a shared secret between a private key
+    /// and a public key.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the public key doesn't have the correct format.
     fn dh(sk: &Self::PrivKey, pk: &Self::PubKey) -> Self::SharedSecret {
         x448(sk.to_bytes(), pk.0).expect("Couldn't derive the pk")
     }
