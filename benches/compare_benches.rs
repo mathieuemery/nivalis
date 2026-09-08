@@ -123,8 +123,8 @@ fn bench_handshake(c: &mut Criterion) {
 
             let (len, _) = match h_i.write_message(&[0_u8; 0], &mut buffer_msg, &mut rng).unwrap(){
                 HandshakeResult::Continue { .. } => panic!("expected initiator to complete at message 3"),
-                HandshakeResult::Complete { bytes_written, initiator, responder, .. } => {
-                    (bytes_written, (initiator, responder))
+                HandshakeResult::Complete { bytes_written, transport_state, .. } => {
+                    (bytes_written, transport_state)
                 }
             };
             h_r.read_message(&buffer_msg[..len], &mut buffer_out).unwrap();
@@ -170,8 +170,8 @@ fn bench_handshake(c: &mut Criterion) {
 
             let (len, _) = match h_r.write_message(&[0_u8; 0], &mut buffer_msg, &mut rng).unwrap(){
                 HandshakeResult::Continue { .. } => panic!("expected initiator to complete at message 2"),
-                HandshakeResult::Complete { bytes_written, initiator, responder, .. } => {
-                    (bytes_written, (initiator, responder))
+                HandshakeResult::Complete { bytes_written,  transport_state, .. } => {
+                    (bytes_written, transport_state)
                 }
             };
             h_i.read_message(&buffer_msg[..len], &mut buffer_out).unwrap();
@@ -230,22 +230,22 @@ fn bench_transport(c: &mut Criterion) {
         };
         h_r.read_message(&buffer_msg[..len], &mut buffer_out).unwrap();
 
-        let (len, (mut init_send, mut _init_recv)) = match h_r.write_message(&[0_u8; 0], &mut buffer_msg, &mut rng).unwrap(){
+        let (len, mut resp_ts) = match h_r.write_message(&[0_u8; 0], &mut buffer_msg, &mut rng).unwrap(){
             HandshakeResult::Continue { .. } => panic!("expected initiator to complete at message 2"),
-            HandshakeResult::Complete { bytes_written, initiator, responder, .. } => {
-                (bytes_written, (initiator, responder))
+            HandshakeResult::Complete { bytes_written, transport_state, .. } => {
+                (bytes_written, transport_state)
             }
         };
-        let (_, (mut resp_recv, mut _resp_send)) = match h_i.read_message(&buffer_msg[..len], &mut buffer_out).unwrap(){
+        let (_, mut init_ts) = match h_i.read_message(&buffer_msg[..len], &mut buffer_out).unwrap(){
             HandshakeResult::Continue { .. } => panic!("expected responder to complete at message 2"),
-            HandshakeResult::Complete { bytes_written, initiator, responder, .. } => {
-                (bytes_written, (initiator, responder))
+            HandshakeResult::Complete { bytes_written, transport_state, .. } => {
+                (bytes_written, transport_state)
             }
         };
 
         b.iter(move || {
-            let len = init_send.encrypt_with_ad(&[], &buffer_msg[..MSG_SIZE], &mut buffer_out).unwrap();
-            resp_recv.decrypt_with_ad(&[], &buffer_out[..len], &mut buffer_msg).unwrap();
+            let len = init_ts.encrypt_message(&[], &buffer_msg[..MSG_SIZE], &mut buffer_out).unwrap();
+            resp_ts.decrypt_message(&[], &buffer_out[..len], &mut buffer_msg).unwrap();
         });
     });
 }

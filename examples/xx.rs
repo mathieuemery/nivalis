@@ -13,8 +13,8 @@ use nivalis::{
         roles::{Initiator, Responder},
     },
     state::{
-        cipher_state::CipherState,
         handshake_state::{HandshakeResult, HandshakeState},
+        transport_state::TransportState
     },
 };
 use rand::rng;
@@ -23,7 +23,8 @@ use rand_core::{Rng as Random, CryptoRng};
 /// Only used to simplify the usage
 type HsInit = HandshakeState<XX, Initiator, X25519dh, ChaChaPoly, Blake2s>;
 type HsResp = HandshakeState<XX, Responder, X25519dh, ChaChaPoly, Blake2s>;
-type Ct = CipherState<ChaChaPoly>;
+type TsInit = TransportState<ChaChaPoly, X25519dh, Initiator>;
+type TsResp = TransportState<ChaChaPoly, X25519dh, Responder>;
 
 const MAX_HANDSHAKE_MSG: usize = 256;
 
@@ -41,7 +42,7 @@ fn build_responder(resp: &X25519Keys) -> HsResp {
         .expect("failed to build responder handshake state")
 }
 
-fn full_handshake<Rng: Random + CryptoRng>(init_hs: &mut HsInit, resp_hs: &mut HsResp, mut rng: Rng) -> ((Ct, Ct), (Ct, Ct)) {
+fn full_handshake<Rng: Random + CryptoRng>(init_hs: &mut HsInit, resp_hs: &mut HsResp, mut rng: Rng) -> (TsInit, TsResp) {
     let mut wire = [0u8; MAX_HANDSHAKE_MSG];
     let mut buf = [0u8; MAX_HANDSHAKE_MSG];
 
@@ -70,19 +71,18 @@ fn full_handshake<Rng: Random + CryptoRng>(init_hs: &mut HsInit, resp_hs: &mut H
         .expect("read msg 2");
 
     // Message 3: s, se
-    let (len, init_split) = match init_hs.write_message(b"", &mut wire, &mut rng).expect("write msg 3") {
+    let (len, init_ts) = match init_hs.write_message(b"", &mut wire, &mut rng).expect("write msg 3") {
         HandshakeResult::Continue { .. } => {
             panic!("expected initiator to complete at message 3")
         }
         HandshakeResult::Complete {
             bytes_written,
-            initiator,
-            responder,
+            transport_state,
             ..
-        } => (bytes_written, (initiator, responder)),
+        } => (bytes_written, transport_state),
     };
 
-    let resp_split = match resp_hs
+    let resp_ts = match resp_hs
         .read_message(&wire[..len], &mut buf)
         .expect("read msg 3")
     {
@@ -90,26 +90,25 @@ fn full_handshake<Rng: Random + CryptoRng>(init_hs: &mut HsInit, resp_hs: &mut H
             panic!("expected responder to complete at message 3")
         }
         HandshakeResult::Complete {
-            initiator,
-            responder,
+            transport_state,
             ..
-        } => (initiator, responder),
+        } => transport_state,
     };
 
-    (init_split, resp_split)
+    (init_ts, resp_ts)
 }
 
-fn round_trip(init_send: &mut Ct, resp_recv: &mut Ct, resp_send: &mut Ct, init_recv: &mut Ct) {
+fn round_trip(init_ts: &mut TsInit, resp_ts: &mut TsResp) {
     // Send a message from initiator to responder
     let plaintext = b"hello from initiator";
     let mut ct = vec![0u8; plaintext.len() + 32];
-    let ct_len = init_send
-        .encrypt_with_ad(b"", plaintext, &mut ct)
+    let ct_len = init_ts
+        .encrypt_message(b"", plaintext, &mut ct)
         .expect("encrypt failed");
 
     let mut recovered = vec![0u8; plaintext.len()];
-    resp_recv
-        .decrypt_with_ad(b"", &ct[..ct_len], &mut recovered)
+    resp_ts
+        .decrypt_message(b"", &ct[..ct_len], &mut recovered)
         .expect("decrypt failed");
 
     assert_eq!(&recovered, plaintext);
@@ -121,13 +120,13 @@ fn round_trip(init_send: &mut Ct, resp_recv: &mut Ct, resp_send: &mut Ct, init_r
     // Send from responder to initiator
     let reply = b"hello from responder";
     let mut ct2 = vec![0u8; reply.len() + 32];
-    let ct2_len = resp_send
-        .encrypt_with_ad(b"", reply, &mut ct2)
+    let ct2_len = resp_ts
+        .encrypt_message(b"", reply, &mut ct2)
         .expect("encrypt failed");
 
     let mut recovered2 = vec![0u8; reply.len()];
-    init_recv
-        .decrypt_with_ad(b"", &ct2[..ct2_len], &mut recovered2)
+    init_ts
+        .decrypt_message(b"", &ct2[..ct2_len], &mut recovered2)
         .expect("decrypt failed");
 
     assert_eq!(&recovered2, reply);
@@ -145,16 +144,14 @@ fn main() {
     let mut init_hs = build_initiator(&init_static);
     let mut resp_hs = build_responder(&resp_static);
 
-    let ((mut init_send, mut init_recv), (mut resp_recv, mut resp_send)) =
+    let (mut init_ts, mut resp_ts) =
         full_handshake(&mut init_hs, &mut resp_hs, rng);
 
     println!("Handshake complete.");
 
     round_trip(
-        &mut init_send,
-        &mut resp_recv,
-        &mut resp_send,
-        &mut init_recv,
+        &mut init_ts,
+        &mut resp_ts,
     );
 
     println!("Round-trip OK");

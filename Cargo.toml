@@ -9,7 +9,7 @@ license = "MIT"
 categories = ["cryptography", "no-std"]
 readme = "README.md"
 keywords = ["noise", "protocol", "crypto", "handshake"]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 
