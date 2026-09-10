@@ -2,9 +2,10 @@
 
 use aes_gcm::AeadInOut;
 use aes_gcm::aead::Error;
-use chacha20poly1305::{ChaCha20Poly1305, Tag};
+use chacha20poly1305::{ChaCha20Poly1305, Key, Tag};
 use hmac::KeyInit;
 use tracing::{debug, warn};
+use zeroize::Zeroizing;
 
 use crate::constants::{ENCRYPTION_KEY_LEN, TAG_LEN};
 use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
@@ -14,9 +15,9 @@ use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 /// 
 /// A `None` key is a valid state as the key isn't
 /// always initialized.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ChaChaPolyState {
-    key: Option<[u8; 32]>,
+    key: Option<Zeroizing<[u8; 32]>>,
 }
 
 /// ChaCha20-Poly1305 implementation of the Noise [`Cipher`] trait.
@@ -30,7 +31,7 @@ impl Cipher for ChaChaPoly {
     type State = ChaChaPolyState;
 
     fn init(key: &[u8; ENCRYPTION_KEY_LEN]) -> Self::State {
-        ChaChaPolyState { key: Some(*key) }
+        ChaChaPolyState { key: Some(Zeroizing::new(*key)) }
     }
 }
 
@@ -65,7 +66,11 @@ impl InternalCipherState for ChaChaPolyState {
                 return Err(Error);
             }
 
-            let cipher = ChaCha20Poly1305::new(key.into());
+            let key: &Key = key
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error)?;
+            let cipher = ChaCha20Poly1305::new(key);
 
             let nonce = Self::convert_nonce(n);
             buf[..pt_buf.len()].copy_from_slice(pt_buf);
@@ -95,7 +100,11 @@ impl InternalCipherState for ChaChaPolyState {
                 return Err(Error);
             }
 
-            let cipher = ChaCha20Poly1305::new(key.into());
+            let key: &Key = key
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error)?;
+            let cipher = ChaCha20Poly1305::new(key);
 
             let nonce = Self::convert_nonce(n);
             let pt_len = ct_buf.len() - TAG_LEN;
@@ -130,7 +139,7 @@ impl InternalCipherState for ChaChaPolyState {
             .try_into()
             .expect("incorrect key length");
 
-        self.key = Some(*key_bytes);
+        self.key = Some(Zeroizing::new(*key_bytes));
 
         Ok(())
     }
