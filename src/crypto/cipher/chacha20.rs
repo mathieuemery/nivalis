@@ -14,7 +14,7 @@ use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 /// 
 /// A `None` key is a valid state as the key isn't
 /// always initialized.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ChaChaPolyState {
     key: Option<[u8; 32]>,
 }

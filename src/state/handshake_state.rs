@@ -62,6 +62,16 @@ pub struct HandshakeKeys<D: DH> {
     pub psk: Option<Psk>,
 }
 
+impl<D: DH> HandshakeKeys<D> {
+    fn clear(&mut self) {
+        self.s.take();
+        self.e.take();
+        self.rs.take();
+        self.re.take();
+        self.psk.take();
+    }
+}
+
 /// Computes `buf_index + len`, checking for both integer overflow and
 /// the Noise spec's maximum message length ([`MAX_MESSAGE_LEN`]).
 fn checked_message_end(buf_index: usize, len: usize) -> Result<usize, NoiseError> {
@@ -354,9 +364,10 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         let psk = self
             .keys
             .psk
+            .as_ref()
             .ok_or(NoiseError::MissingRequirements(MissingKey::Psk))?;
 
-        self.s_state.mix_key_and_hash::<D>(&psk);
+        self.s_state.mix_key_and_hash::<D>(psk.as_bytes());
 
         Ok(())
     }
@@ -499,6 +510,10 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         if self.step == messages.len() {
             let (c1, c2) = self.s_state.split::<D>();
             let remote_pk = self.keys.rs.take();
+
+            // To zeroize the keys
+            self.keys.clear();
+            
             let transport_state = TransportState::new(c1, c2, remote_pk);
             Ok(HandshakeResult::Complete {
                 bytes_written: buf_index,
@@ -608,6 +623,10 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
         if self.step == messages.len() {
             let (c1, c2) = self.s_state.split::<D>();
             let remote_pk = self.keys.rs.take();
+
+            // To zeroize the keys
+            self.keys.clear();
+
             let transport_state = TransportState::new(c1, c2, remote_pk);
             Ok(HandshakeResult::Complete {
                 bytes_written: message.len(),

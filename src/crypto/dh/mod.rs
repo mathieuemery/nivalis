@@ -30,7 +30,7 @@ pub trait DHKeypair {
     fn pubkey_bytes(&self) -> Vec<u8>;
 
     /// Derive a keypair from an existing private key.
-    fn derive_keypair(sk: &Self::PrivKey) -> Self;
+    fn derive_keypair(sk: Self::PrivKey) -> Self;
 }
 
 /// A Noise `DH` function.

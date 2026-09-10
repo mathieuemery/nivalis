@@ -24,6 +24,7 @@ use serde::{
     de::{self, Deserializer, Unexpected, Visitor},
     ser::Serializer,
 };
+use zeroize::Zeroizing;
 
 #[derive(Clone)]
 struct HexBytes<T> {
@@ -253,12 +254,12 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
     if let Some(psk) = &vector.init_psks
         && !psk.is_empty()
     {
-        init_psks = Some(psk[0].payload);
+        init_psks = Some(Psk(Zeroizing::new(psk[0].payload)));
     }
     if let Some(psk) = &vector.resp_psks
         && !psk.is_empty()
     {
-        resp_psks = Some(psk[0].payload);
+        resp_psks = Some(Psk(Zeroizing::new(psk[0].payload)));
     }
 
     if let Some(s) = &vector.init_static {
@@ -285,7 +286,7 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
             .ok_or_else(|| "init_remote_static set but resp_static missing".to_string())?;
         let resp_sk = D::privkey_from_bytes(resp_static)
             .map_err(|e| format!("bad resp_static (for remote derivation): {e}"))?;
-        let pk = D::Keypair::derive_keypair(&resp_sk);
+        let pk = D::Keypair::derive_keypair(resp_sk);
         init_remote_static = Some(pk.public());
     }
     if vector.resp_remote_static.is_some() {
@@ -295,7 +296,7 @@ fn run_vector<P: Pattern, D: DH, C: Cipher, H: Hash>(vector: &TestVector) -> Res
             .ok_or_else(|| "resp_remote_static set but init_static missing".to_string())?;
         let init_sk = D::privkey_from_bytes(init_static)
             .map_err(|e| format!("bad init_static (for remote derivation): {e}"))?;
-        let pk = D::Keypair::derive_keypair(&init_sk).public();
+        let pk = D::Keypair::derive_keypair(init_sk).public();
         resp_remote_static = Some(pk);
     }
 

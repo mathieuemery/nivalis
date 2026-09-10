@@ -1,5 +1,7 @@
 //! Types used by other modules
 
+use zeroize::Zeroizing;
+
 use crate::constants::NONCE_LEN;
 
 /// A Noise handshake nonce.
@@ -11,4 +13,10 @@ pub type Nonce = [u8; NONCE_LEN];
 /// 
 /// Used by some patterns where both parties
 /// already have a shared secret
-pub type Psk = [u8; 32];
+pub struct Psk(pub Zeroizing<[u8; 32]>);
+
+impl Psk {
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}

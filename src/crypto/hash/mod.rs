@@ -2,6 +2,7 @@
 
 extern crate alloc;
 use alloc::{vec, vec::Vec};
+use zeroize::{Zeroize, Zeroizing};
 
 pub mod blake2b;
 pub mod blake2s;
@@ -24,7 +25,7 @@ pub trait Hash {
     const NAME: &'static str;
 
     /// The output type of this hash function.
-    type Output: Copy + AsRef<[u8]>;
+    type Output: Clone + AsRef<[u8]> + Zeroize;
 
     /// Pads `data` to a multiple of [`HASHLEN`](Self::HASHLEN).
     /// 
@@ -69,26 +70,25 @@ pub trait Hash {
             ikm.len()
         );
 
-        let temp_key = Self::hmac_hash(chaining_key, ikm);
+        let temp_key = Zeroizing::new(Self::hmac_hash(chaining_key, ikm));
 
         let output1 = Self::hmac_hash(temp_key.as_ref(), &[0x01]);
 
-        let mut input2 = Vec::with_capacity(Self::HASHLEN + 1);
+        let mut input2 = Zeroizing::new(Vec::with_capacity(Self::HASHLEN + 1));
         input2.extend_from_slice(output1.as_ref());
         input2.push(0x02);
         let output2 = Self::hmac_hash(temp_key.as_ref(), &input2);
 
-        let mut result = vec![output1, output2];
-
-        if num_outputs == 3 {
-            let mut input3 = Vec::with_capacity(Self::HASHLEN + 1);
-            input3.extend_from_slice(output2.as_ref());
-            input3.push(0x03);
-            let output3 = Self::hmac_hash(temp_key.as_ref(), &input3);
-            result.push(output3);
+        if num_outputs == 2 {
+            return vec![output1, output2];
         }
 
-        result
+        let mut input3 = Zeroizing::new(Vec::with_capacity(Self::HASHLEN + 1));
+        input3.extend_from_slice(output2.as_ref());
+        input3.push(0x03);
+        let output3 = Self::hmac_hash(temp_key.as_ref(), &input3);
+        
+        vec![output1, output2, output3]
     }
 
     /// Wrapper around [`hkdf`](Self::hkdf) that returns exactly two outputs.
