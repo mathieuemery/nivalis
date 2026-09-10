@@ -1,11 +1,10 @@
 //! AES-GCM implementation of the Cipher and Cipherstate traits
 
 use aes_gcm::{
-    AeadInOut, Aes256Gcm, Key, KeyInit,
+    AeadInOut, Aes256Gcm, KeyInit,
     aead::{Error, Tag},
 };
 use tracing::{debug, warn};
-use zeroize::Zeroizing;
 
 use crate::constants::{ENCRYPTION_KEY_LEN, TAG_LEN};
 use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
@@ -18,7 +17,7 @@ use crate::crypto::cipher::{Cipher, InternalCipherState, NONCE_LEN, Nonce};
 /// always initialized.
 #[derive(Clone, Debug)]
 pub struct AesGcmState {
-    key: Option<Zeroizing<[u8; 32]>>,
+    key: Option<[u8; 32]>,
 }
 
 /// AES-256-GCM implementation of the Noise [`Cipher`] trait.
@@ -32,7 +31,7 @@ impl Cipher for AesGcm {
     type State = AesGcmState;
 
     fn init(key: &[u8; ENCRYPTION_KEY_LEN]) -> Self::State {
-        AesGcmState { key: Some(Zeroizing::new(*key)) }
+        AesGcmState { key: Some(*key) }
     }
 }
 
@@ -66,11 +65,7 @@ impl InternalCipherState for AesGcmState {
                 return Err(Error);
             }
 
-            let key: &Key<Aes256Gcm> = key
-                .as_ref()
-                .try_into()
-                .map_err(|_| Error)?;
-            let cipher = Aes256Gcm::new(key);
+            let cipher = Aes256Gcm::new(key.into());
 
             let nonce = Self::convert_nonce(n);
             buf[..pt_buf.len()].copy_from_slice(pt_buf);
@@ -100,11 +95,7 @@ impl InternalCipherState for AesGcmState {
                 return Err(Error);
             }
 
-            let key: &Key<Aes256Gcm> = key
-                .as_ref()
-                .try_into()
-                .map_err(|_| Error)?;
-            let cipher = Aes256Gcm::new(key);
+            let cipher = Aes256Gcm::new(key.into());
 
             let nonce = Self::convert_nonce(n);
             let pt_len = ct_buf.len() - TAG_LEN;
@@ -140,7 +131,7 @@ impl InternalCipherState for AesGcmState {
             .try_into()
             .expect("incorrect key length");
 
-        self.key = Some(Zeroizing::new(*key_bytes));
+        self.key = Some(*key_bytes);
 
         Ok(())
     }

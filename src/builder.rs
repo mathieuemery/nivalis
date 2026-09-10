@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use zeroize::Zeroizing;
 use core::marker::PhantomData;
 
 use crate::crypto::{
@@ -132,15 +133,9 @@ where
             return Err(NoiseError::MissingRequirements(MissingKey::Psk));
         }
 
-        let s: Option<D::Keypair> = match local_static {
-            Some(s) => Some(D::Keypair::derive_keypair(&s)),
-            None => None,
-        };
+        let s: Option<D::Keypair> = local_static.map(D::Keypair::derive_keypair);
 
-        let e: Option<D::Keypair> = match local_ephemeral {
-            Some(e) => Some(D::Keypair::derive_keypair(&e)),
-            None => None,
-        };
+        let e: Option<D::Keypair> = local_ephemeral.map(D::Keypair::derive_keypair);
 
         let keys = HandshakeKeys {
             s,
@@ -184,7 +179,7 @@ where
         self,
         sk: D::PrivKey,
     ) -> HandshakeParamsBuilder<P, R, D, C, H, true, RS, LE, RE, PSK> {
-        let kp = D::Keypair::derive_keypair(&sk);
+        let kp = D::Keypair::derive_keypair(sk);
         HandshakeParamsBuilder {
             local_static: Some(kp),
             remote_static: self.remote_static,
@@ -243,7 +238,7 @@ where
         self,
         sk: D::PrivKey,
     ) -> HandshakeParamsBuilder<P, R, D, C, H, LS, RS, true, RE, PSK> {
-        let kp = D::Keypair::derive_keypair(&sk);
+        let kp = D::Keypair::derive_keypair(sk);
         HandshakeParamsBuilder {
             local_static: self.local_static,
             remote_static: self.remote_static,
@@ -304,7 +299,7 @@ where
             remote_static: self.remote_static,
             local_ephemeral: self.local_ephemeral,
             remote_ephemeral: self.remote_ephemeral,
-            psk: Some(psk),
+            psk: Some(Psk(Zeroizing::new(psk))),
             prologue: self.prologue,
             _marker: PhantomData,
         }

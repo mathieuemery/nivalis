@@ -5,6 +5,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use tracing::trace;
+use zeroize::Zeroizing;
 
 use crate::constants::{ENCRYPTION_KEY_LEN, MAX_MESSAGE_LEN, TAG_LEN};
 use crate::crypto::{cipher::Cipher, dh::DH, hash::Hash};
@@ -19,7 +20,7 @@ use crate::state::cipher_state::CipherState;
 /// produce the pair of `CipherState`s used for transport encryption.
 pub struct SymmetricState<C: Cipher, H: Hash> {
     c_state: CipherState<C>,
-    ck: H::Output,
+    ck: Zeroizing<H::Output>,
     h: H::Output,
     splitted: bool,
 }
@@ -42,7 +43,7 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
 
         Self {
             c_state: CipherState::initialize_key(None),
-            ck: h,
+            ck: Zeroizing::new(h.clone()),
             h,
             splitted: false,
         }
@@ -56,10 +57,10 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
     pub fn mix_key<D: DH>(&mut self, input_key_material: &[u8]) {
         let (ck, temp_k) = H::hkdf2(self.ck.as_ref(), input_key_material, D::DHLEN);
 
-        self.ck = ck;
+        self.ck = Zeroizing::new(ck);
 
         // Instead of truncating, we know the key must always be 32 bytes
-        let mut key = [0u8; ENCRYPTION_KEY_LEN];
+        let mut key = Zeroizing::new([0u8; ENCRYPTION_KEY_LEN]);
         key.copy_from_slice(&temp_k.as_ref()[..ENCRYPTION_KEY_LEN]);
 
         self.c_state = CipherState::initialize_key(Some(&key));
@@ -84,10 +85,10 @@ impl<C: Cipher, H: Hash> SymmetricState<C, H> {
     pub fn mix_key_and_hash<D: DH>(&mut self, input_key_material: &[u8]) {
         let (ck, temp_h, temp_k) = H::hkdf3(self.ck.as_ref(), input_key_material, D::DHLEN);
 
-        self.ck = ck;
+        self.ck = Zeroizing::new(ck);
         self.mix_hash(temp_h.as_ref());
 
-        let mut key = [0u8; ENCRYPTION_KEY_LEN];
+        let mut key = Zeroizing::new([0u8; ENCRYPTION_KEY_LEN]);
         key.copy_from_slice(&temp_k.as_ref()[..ENCRYPTION_KEY_LEN]);
 
         self.c_state = CipherState::initialize_key(Some(&key));

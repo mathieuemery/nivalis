@@ -3,9 +3,9 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use rand_core::{Rng, CryptoRng};
-
 use cx448::{MontgomeryPoint, Scalar, WideScalarBytes, x448::x448};
+use rand_core::{Rng, CryptoRng};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::dh::{DH, DHKeypair};
 use crate::error::NoiseError;
@@ -14,6 +14,12 @@ use crate::error::NoiseError;
 pub struct X448Keys {
     pub public: MontgomeryPoint,
     private: Scalar,
+}
+
+impl Drop for X448Keys {
+    fn drop(&mut self) {
+        self.private.zeroize();
+    }
 }
 
 impl DHKeypair for X448Keys {
@@ -39,10 +45,10 @@ impl DHKeypair for X448Keys {
     /// 
     /// Panics if the X448 multiplication fails. Shouldn't happen as the error
     /// is thrown if `point_bytes` is malformed.
-    fn derive_keypair(sk: &Self::PrivKey) -> Self {
+    fn derive_keypair(sk: Self::PrivKey) -> Self {
         let pk = x448(sk.to_bytes(), MontgomeryPoint::GENERATOR.0).expect("Couldn't derive the pk");
         Self {
-            private: *sk,
+            private: sk,
             public: MontgomeryPoint(pk),
         }
     }
@@ -62,7 +68,7 @@ impl DH for X448dh {
     type Keypair = X448Keys;
     type PrivKey = Scalar;
     type PubKey = MontgomeryPoint;
-    type SharedSecret = [u8; Self::DHLEN];
+    type SharedSecret = Zeroizing<[u8; Self::DHLEN]>;
 
     fn privkey_from_bytes(bytes: &[u8]) -> Result<Self::PrivKey, NoiseError> {
         let sk_bytes: [u8; Self::DHLEN] = bytes
@@ -94,7 +100,10 @@ impl DH for X448dh {
         // of rand_core
         let mut wide_bytes = WideScalarBytes::default();
         rng.fill_bytes(&mut wide_bytes);
+
         let private = Scalar::from_bytes_mod_order_wide(&wide_bytes);
+        wide_bytes.zeroize();
+
         let public = &private * &MontgomeryPoint::GENERATOR;
 
         X448Keys { public, private }
@@ -107,6 +116,9 @@ impl DH for X448dh {
     /// 
     /// Panics if the public key doesn't have the correct format.
     fn dh(sk: &Self::PrivKey, pk: &Self::PubKey) -> Self::SharedSecret {
-        x448(sk.to_bytes(), pk.0).expect("Couldn't derive the pk")
+        Zeroizing::new(
+            x448(sk.to_bytes(), pk.0)
+                .expect("Couldn't derive the pk")
+        )
     }
 }

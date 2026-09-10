@@ -31,10 +31,10 @@ impl DHKeypair for X25519Keys {
         self.public.to_bytes().to_vec()
     }
 
-    fn derive_keypair(sk: &Self::PrivKey) -> Self {
-        let pk = PublicKey::from(sk);
+    fn derive_keypair(sk: Self::PrivKey) -> Self {
+        let pk = PublicKey::from(&sk);
         Self {
-            private: sk.clone(),
+            private: sk,
             public: pk,
         }
     }
