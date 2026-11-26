@@ -108,7 +108,9 @@ where
     /// 
     /// # Errors
     /// Returns [`NoiseError::MissingRequirements`] if a key required by
-    /// the pattern wasn't provided
+    /// the pattern wasn't provided, and [`NoiseError::InvalidInput`] if a
+    /// remote static or ephemeral key is provided that is not a pre-message
+    /// of the pattern for this role.
     pub fn from_parts(
         local_static: Option<D::PrivKey>,
         remote_static: Option<D::PubKey>,
@@ -131,6 +133,16 @@ where
         }
         if P::PSK_REQUIRED && psk.is_none() {
             return Err(NoiseError::MissingRequirements(MissingKey::Psk));
+        }
+        if !P::REMOTE_STATIC_REQUIRED && remote_static.is_some() {
+            return Err(NoiseError::InvalidInput(
+                "unexpected remote static key: it is not a pre-message for this pattern/role",
+            ));
+        }
+        if !P::REMOTE_EPHEMERAL_REQUIRED && remote_ephemeral.is_some() {
+            return Err(NoiseError::InvalidInput(
+                "unexpected remote ephemeral key: it is not a pre-message for this pattern/role",
+            ));
         }
 
         let s: Option<D::Keypair> = local_static.map(D::Keypair::derive_keypair);
@@ -204,7 +216,28 @@ where
     /// Sets the remote party's static public key.
     /// 
     /// Required by patterns where the remote's static key is known in advance
-    /// (ex: `IK`, `XK`). Only available when not set (`RS = true`).
+    /// (ex: `IK`, `XK`). Only available when not set (`RS = false`).
+    /// 
+    /// It is a compilation error to `.build()` after setting it on a
+    /// pattern/role where the remote static key is not a pre-message:
+    /// there the key is either received during the handshake (and would
+    /// silently replace this one) or never part of the handshake at all
+    /// (and would be reported by
+    /// [`TransportState::remote_static_pk`](crate::state::transport_state::TransportState::remote_static_pk)
+    /// without ever having been authenticated).
+    /// 
+    /// ```compile_fail
+    /// use nivalis::{
+    ///    builder::NewBuilder,
+    ///    crypto::{cipher::chacha20::ChaChaPoly, dh::{DH, DHKeypair, x25519::X25519dh}, hash::blake2s::Blake2s},
+    ///    patterns::{NN, roles::Responder},
+    /// };
+    /// # let mut rng = rand::rng();
+    /// let peer = X25519dh::generate_keypair(&mut rng);
+    /// let _ = NewBuilder::<NN, Responder, X25519dh, ChaChaPoly, Blake2s>::new()
+    ///     .remote_static_key(peer.public())
+    ///     .build();
+    /// ```
     pub fn remote_static_key(
         self,
         pk: D::PubKey,
@@ -264,6 +297,24 @@ where
     /// 
     /// Required as a pre-message on patterns/role where the peer's ephemeral key
     /// is known in advance (see Section 7). Only available when not set (`RE = false`)
+    /// 
+    /// It is a compilation error to `.build()` after setting it on a
+    /// pattern/role where the remote ephemeral key is not a pre-message
+    /// (none of the currently supported patterns has one): reading the
+    /// peer's `e` would then fail with `InvalidState("re must be empty")`.
+    /// 
+    /// ```compile_fail
+    /// use nivalis::{
+    ///    builder::NewBuilder,
+    ///    crypto::{cipher::chacha20::ChaChaPoly, dh::{DH, DHKeypair, x25519::X25519dh}, hash::blake2s::Blake2s},
+    ///    patterns::{NN, roles::Initiator},
+    /// };
+    /// # let mut rng = rand::rng();
+    /// let peer = X25519dh::generate_keypair(&mut rng);
+    /// let _ = NewBuilder::<NN, Initiator, X25519dh, ChaChaPoly, Blake2s>::new()
+    ///     .remote_ephemeral_key(peer.public())
+    ///     .build();
+    /// ```
     pub fn remote_ephemeral_key(
         self,
         pk: D::PubKey,
@@ -351,7 +402,15 @@ where
             assert!(
                 PSK || !P::PSK_REQUIRED,
                 "missing `.psk(...)`: the pattern requires a psk to be valid"
-            )
+            );
+            assert!(
+                !RS || P::REMOTE_STATIC_REQUIRED,
+                "unexpected `.remote_static_key(...)`: the peer's static key is not a pre-message for this pattern/role (it is either sent during the handshake or never used)"
+            );
+            assert!(
+                !RE || P::REMOTE_EPHEMERAL_REQUIRED,
+                "unexpected `.remote_ephemeral_key(...)`: the peer's ephemeral key is not a pre-message for this pattern/role (it is sent during the handshake)"
+            );
         }
 
         let keys = HandshakeKeys {

@@ -586,6 +586,11 @@ impl<P: Pattern, R: RoleMarker, C: Cipher, D: DH, H: Hash> HandshakeState<P, R, 
                     }
                 }
                 Token::S => {
+                    // Noise §5.3: "Sets rs (which must be empty)"
+                    if self.keys.rs.is_some() {
+                        return Err(NoiseError::InvalidState("rs must be empty"));
+                    }
+
                     let len = if self.s_state.has_key() {
                         D::DHLEN + 16
                     } else {
