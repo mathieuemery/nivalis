@@ -8,6 +8,7 @@ authors = ["Mathieu Emery <mathieuemery@proton.me>"]
 license = "MIT"
 categories = ["cryptography", "no-std"]
 readme = "README.md"
+exclude = ["lean/"]
 keywords = ["noise", "protocol", "crypto", "handshake"]
 version = "0.3.2"
 edition = "2024"

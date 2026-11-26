@@ -167,11 +167,7 @@ impl HandshakePattern {
         } else {
             self.pre_messages_responder
         };
-        if Self::contains_e(own_pre) {
-            return true;
-        }
-
-        false
+        Self::contains_e(own_pre)
     }
 }
 
