@@ -1,0 +1,23 @@
+name: Lean proofs
+on:
+  push:
+  pull_request:
+
+jobs:
+  lean:
+    name: lake build (lean/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pattern table matches src/patterns/mod.rs
+        run: python3 -I lean/gen_patterns.py src/patterns/mod.rs | diff - lean/NivalisProof/Patterns.lean
+      - name: No sorry, admit or native_decide
+        run: "! grep -rnwE 'sorry|admit|native_decide' lean/NivalisProof lean/NivalisProof.lean"
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: lean
+          auto-config: false
+          build: true
+          test: false
+          lint: false
+          use-mathlib-cache: false

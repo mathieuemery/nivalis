@@ -1,0 +1,15 @@
+name = "NivalisProof"
+defaultTargets = ["NivalisProof"]
+
+# Noise formalisation from ScalingTrust. Only its ScalingTrust.Noise.* modules
+# are imported, and they don't use Mathlib, so Mathlib is cloned (ScalingTrust
+# depends on it for other folders) but never built.
+# Run `lake update` with MATHLIB_NO_CACHE_ON_UPDATE=1, otherwise Mathlib's hook
+# downloads its ~6 GB build cache, which isn't needed here.
+[[require]]
+name = "ScalingTrust"
+git = "https://github.com/artie2000/ScalingTrust.git"
+rev = "fa18b35e0fa365887eced712251508eff403fb19"
+
+[[lean_lib]]
+name = "NivalisProof"

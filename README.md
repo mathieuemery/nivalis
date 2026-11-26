@@ -80,6 +80,8 @@ let responder = NewBuilder::<IK, Responder, X25519dh, ChaChaPoly, Blake2s>::new(
 
 If you tried to `.build()` the initiator above without calling `.remote_static_key(...)` first, the program would refuse to compile.
 
+It also refuses to compile if you pass a remote static or ephemeral key that the pattern doesn't expect up front, for example `.remote_static_key(...)` on an `XX` initiator or an `NN` responder. Such a key would either be replaced by the one received during the handshake, or show up in `TransportState::remote_static_pk()` even though the peer never proved it owns it.
+
 See `examples/` for a full handshake-to-transport walkthrough, including sending and decrypting an encrypted message once the handshake completes.
 
 ## Benchmarks
@@ -103,6 +105,10 @@ To test it yourself on your computer, run:
 ## Status
 
 `nivalis` has **not been independently security-reviewed or audited**. It passes the standard Noise test vectors, which gives confidence in protocol-level correctness, but that is not a substitute for cryptographic review. Do not use this in a security-critical context without an audit. Use at your own risk, and please report anything that looks wrong.
+
+## Verification
+
+[`lean/`](lean/) has a Lean 4 proof of the builder checks above. For every valid Noise pattern, if `.build()` compiles, the handshake doesn't fail on a missing or unexpected key. It also checks the pattern table against the Noise spec. Details and limits are in [`lean/README.md`](lean/README.md).
 
 ## Contributing
 
